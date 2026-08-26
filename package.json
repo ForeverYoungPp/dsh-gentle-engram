@@ -1,0 +1,60 @@
+{
+  "name": "dsh-gentle-engram",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Cordis Host integration for Engram persistent memory in DeepSeek Harness",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/eehcx/dsh-gentle-engram.git"
+  },
+  "bugs": {
+    "url": "https://github.com/eehcx/dsh-gentle-engram/issues"
+  },
+  "homepage": "https://github.com/eehcx/dsh-gentle-engram#readme",
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "cordis",
+    "engram",
+    "persistent-memory"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./cordis.patch.yml": "./cordis.patch.yml"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc -p tsconfig.json",
+    "prepublishOnly": "pnpm run typecheck && pnpm run build && npm pack --dry-run",
+    "release:check": "pnpm run typecheck && pnpm run build && npm pack --dry-run",
+    "release:alpha": "pnpm publish --access public --tag alpha",
+    "release:stable": "pnpm publish --access public --tag latest"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-tools": "^0.1.1-rc.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "tsdown": "^0.15.12",
+    "typescript": "^5.9.3"
+  }
+}

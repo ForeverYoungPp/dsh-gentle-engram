@@ -1,0 +1,23 @@
+# Host bundle patch for the Engram integration.
+# The official MCP bridge is owned by this plugin bundle; no ad-hoc profile row
+# is required. The lifecycle plugin consumes its qualified tools.
+- insert:
+    - id: engram-mcp
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: engram
+        transport: stdio
+        command: engram
+        args: ['mcp', '--tools=agent']
+        failOnStartupError: false
+        reconnect:
+          enabled: true
+          initialDelayMs: 500
+          maxDelayMs: 30000
+          maxAttempts: 10
+    - id: engram-memory
+      name: dsh-gentle-engram
+      config:
+        serverName: engram
+        contextLimit: 8000
+        captureToolResults: true
