@@ -50,3 +50,35 @@ pnpm run typecheck
 pnpm run build
 ```
 
+## Contributing
+
+Contributions, bug reports, documentation updates, and focused feature
+proposals are welcome. For the complete workflow, coding expectations, and pull
+request checklist, see [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
+Before starting:
+
+- Check existing [issues](https://github.com/eehcx/dsh-gentle-engram/issues) and
+  pull requests to avoid duplicate work.
+- Open an issue first for larger changes so the approach can be discussed.
+- Do not include secrets, personal Engram data, local database files, or
+  machine-specific configuration in commits.
+
+For a typical change:
+
+1. Fork the repository and create a focused branch.
+2. Install dependencies with `pnpm install`.
+3. Make the smallest change that solves the problem, preserving existing
+   TypeScript and Cordis patterns.
+4. Run `pnpm run typecheck` and `pnpm run build`.
+5. Open a pull request explaining what changed, why, and how it was validated.
+
+Keep pull requests focused, avoid editing generated `dist/` output directly,
+and do not include unrelated formatting or dependency changes. Please report
+suspected security vulnerabilities privately rather than in a public issue.
+
+## License
+
+This project is released under the MIT License. See [`LICENSE`](LICENSE) for
+the complete license text.
+

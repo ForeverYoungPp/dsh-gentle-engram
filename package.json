@@ -8,7 +8,9 @@
   "files": [
     "dist",
     "cordis.patch.yml",
-    "README.md"
+    "README.md",
+    "CONTRIBUTING.md",
+    "LICENSE"
   ],
   "publishConfig": {
     "access": "public"
