@@ -63,6 +63,17 @@ needed.
 - Be prepared to respond to review feedback; maintainers may request changes
 before merging.
 
+## Releases
+
+Releases are managed with [Release Please](https://github.com/googleapis/release-please) and published by GitHub Actions.
+
+1. Use [Conventional Commits](https://www.conventionalcommits.org/), such as `fix:` or `feat:`.
+2. Push changes to `main`; Release Please opens or updates a release PR.
+3. Merge the release PR. It creates a GitHub Release and tag.
+4. The publish workflow validates, builds, and publishes that tag to npm.
+
+The npm package must have GitHub Actions configured as a trusted publisher for this repository and the workflow `.github/workflows/publish.yml`. Do not add an npm token to the repository.
+
 ## Reporting security issues
 
 Please do not disclose suspected vulnerabilities in a public issue. Contact
