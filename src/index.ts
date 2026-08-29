@@ -87,6 +87,7 @@ export function apply(ctx: CordisContext, rawConfig: Config = {}): void {
   const config = { ...DEFAULTS, ...rawConfig }
   const tools = ctx.tools
   const active = new Set<string>()
+  const started = new Set<string>()
   const tails = new Map<string, Promise<unknown>>()
 
   const call = (agent: Agent | undefined, rawName: string, args: JsonRecord): Promise<ToolResult | undefined> => {
@@ -103,9 +104,11 @@ export function apply(ctx: CordisContext, rawConfig: Config = {}): void {
     })
     const previous = tails.get(id) || Promise.resolve()
     const next = previous.catch(() => undefined).then(operation)
-    tails.set(id, next.finally(() => {
-      if (tails.get(id) === next) tails.delete(id)
-    }))
+    const tail = next.finally(() => {
+      if (tails.get(id) === tail) tails.delete(id)
+    })
+    // Keep the coordination tail settled even when the MCP call fails.
+    tails.set(id, tail.catch(() => undefined))
     return next.catch((error: unknown) => {
       ctx.logger?.warn(`engram ${rawName} failed for ${id}: ${String(error)}`)
       return undefined
@@ -123,7 +126,10 @@ export function apply(ctx: CordisContext, rawConfig: Config = {}): void {
     if (!id || active.has(id)) return
     active.add(id)
     const directory = directoryOf(agent)
-    void call(agent, 'mem_session_start', { id, ...(directory ? { directory } : {}) }).then(async () => {
+    void call(agent, 'mem_session_start', { id, ...(directory ? { directory } : {}) }).then(async (result) => {
+      // A failed project lookup must not trigger a second automatic lookup.
+      if (!result) return
+      started.add(id)
       const context = await contextText(agent)
       if (context) agent.inject(createInjectedMessage(`Relevant persistent Engram context for this session:\n\n${context}`))
     })
@@ -151,11 +157,18 @@ export function apply(ctx: CordisContext, rawConfig: Config = {}): void {
   ctx.on('agent/disposed', (payload: { agent: Agent }) => {
     const id = sessionIdOf(payload.agent)
     if (!id) return
+    if (!started.has(id)) {
+      active.delete(id)
+      return
+    }
     void call(payload.agent, 'mem_session_summary', {
       content: `## Goal\nPreserve the completed DeepSeek Harness session in Engram.\n\n## Accomplished\n- Session lifecycle and relevant tool activity were captured automatically.\n\n## Next Steps\n- Review the session memories when continuing work.\n\n## Relevant Files\n- Session ${id}`,
       session_id: id,
-    }).finally(() => call(payload.agent, 'mem_session_end', { id, summary: 'DeepSeek Harness session ended.' }))
-    active.delete(id)
+    }).finally(() => {
+      started.delete(id)
+      active.delete(id)
+      return call(payload.agent, 'mem_session_end', { id, summary: 'DeepSeek Harness session ended.' })
+    })
   })
 
   const systemPrompt = ctx.get('systemPrompt') as PromptRegistry | undefined

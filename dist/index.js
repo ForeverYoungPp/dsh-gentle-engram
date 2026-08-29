@@ -50,6 +50,7 @@ function apply(ctx, rawConfig = {}) {
 	};
 	const tools = ctx.tools;
 	const active = /* @__PURE__ */ new Set();
+	const started = /* @__PURE__ */ new Set();
 	const tails = /* @__PURE__ */ new Map();
 	const call = (agent, rawName, args) => {
 		const id = sessionIdOf(agent);
@@ -64,9 +65,10 @@ function apply(ctx, rawConfig = {}) {
 			signal: new AbortController().signal
 		});
 		const next = (tails.get(id) || Promise.resolve()).catch(() => void 0).then(operation);
-		tails.set(id, next.finally(() => {
-			if (tails.get(id) === next) tails.delete(id);
-		}));
+		const tail = next.finally(() => {
+			if (tails.get(id) === tail) tails.delete(id);
+		});
+		tails.set(id, tail.catch(() => void 0));
 		return next.catch((error) => {
 			ctx.logger?.warn(`engram ${rawName} failed for ${id}: ${String(error)}`);
 		});
@@ -83,7 +85,9 @@ function apply(ctx, rawConfig = {}) {
 		call(agent, "mem_session_start", {
 			id,
 			...directory ? { directory } : {}
-		}).then(async () => {
+		}).then(async (result) => {
+			if (!result) return;
+			started.add(id);
 			const context = await contextText(agent);
 			if (context) agent.inject(createInjectedMessage(`Relevant persistent Engram context for this session:\n\n${context}`));
 		});
@@ -110,14 +114,21 @@ function apply(ctx, rawConfig = {}) {
 	ctx.on("agent/disposed", (payload) => {
 		const id = sessionIdOf(payload.agent);
 		if (!id) return;
+		if (!started.has(id)) {
+			active.delete(id);
+			return;
+		}
 		call(payload.agent, "mem_session_summary", {
 			content: `## Goal\nPreserve the completed DeepSeek Harness session in Engram.\n\n## Accomplished\n- Session lifecycle and relevant tool activity were captured automatically.\n\n## Next Steps\n- Review the session memories when continuing work.\n\n## Relevant Files\n- Session ${id}`,
 			session_id: id
-		}).finally(() => call(payload.agent, "mem_session_end", {
-			id,
-			summary: "DeepSeek Harness session ended."
-		}));
-		active.delete(id);
+		}).finally(() => {
+			started.delete(id);
+			active.delete(id);
+			return call(payload.agent, "mem_session_end", {
+				id,
+				summary: "DeepSeek Harness session ended."
+			});
+		});
 	});
 	ctx.get("systemPrompt")?.section({
 		name: "engram:protocol",
