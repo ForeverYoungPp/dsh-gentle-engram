@@ -1,48 +1,150 @@
 # dsh-gentle-engram
 
-Host Cordis plugin written in TypeScript that adds reliable [Engram](https://github.com/Gentleman-Programming/engram) lifecycle behavior to DeepSeek Harness.
+HTTP-native [Engram](https://github.com/Gentleman-Programming/engram) persistent memory for
+DeepSeek Harness. The plugin registers native `mem_*` tools, captures prompts and tool
+learnings, and keeps a session's memory alive across compactions.
 
-This integration requires [Engram](https://github.com/Gentleman-Programming/engram) to be installed and available on your system; the bridge cannot work without it.
+This is a **0.2.0 rewrite**. Version 0.1.x bridged Engram's MCP server; that approach could
+not be made correct, for reasons recorded in [DESIGN.md](./DESIGN.md) and
+[PI-PORT.md](./PI-PORT.md).
 
-## Design
+## Why HTTP instead of MCP
 
-- Uses the existing `@deepseek-ai/dsh-mcp-client` row for official [Engram](https://github.com/Gentleman-Programming/engram) MCP stdio tools.
-- Hooks DSH session start, inbound prompts, tool results, turn stopping, and agent disposal.
-- Seeds relevant [Engram](https://github.com/Gentleman-Programming/engram) context into the next model step.
-- Saves prompts and filtered passive tool learnings asynchronously.
-- Serializes per-session writes and waits for pending writes at turn boundaries.
-- Closes [Engram](https://github.com/Gentleman-Programming/engram) sessions and records a structured summary when an agent is disposed.
-- Never accesses [Engram](https://github.com/Gentleman-Programming/engram) SQLite directly and avoids forwarding likely secrets.
+Engram's MCP surface is missing exactly the two capabilities a multi-session host needs:
 
-## Installation from npm
+| Capability | Why MCP cannot provide it |
+| --- | --- |
+| Resolve the project from **this session's** directory | `mem_current_project` uses the MCP child process's `os.Getwd()` - the harness launch directory, not the session directory |
+| Session-scoped compaction recovery context | `GET /context/compaction?session_id=` has no MCP equivalent |
 
-Requirements:
+The upstream Pi adapter reached the same conclusion and ships its MCP row with
+`directTools: false`. This bundle therefore inserts **no MCP row at all**.
 
-- DeepSeek Harness with the `dsh plugin` command.
-- [Engram](https://github.com/Gentleman-Programming/engram) installed and available as `engram` in `PATH`.
-- A configured DSH profile, such as `web`.
+## Requirements
 
-Install the alpha channel with:
+- DeepSeek Harness 0.1.5-rc.2 or later.
+- An Engram binary on `PATH` (or `ENGRAM_BIN`) that provides the `serve` subcommand.
+  Verify with `engram serve` and `engram --version`.
 
-```bash
-npx @deepseek-ai/dsh plugin --profile web add dsh-gentle-engram@alpha
-```
-
-For the stable channel:
+## Installation
 
 ```bash
-npx @deepseek-ai/dsh plugin --profile web add dsh-gentle-engram
+dsh plugin --profile web add dsh-gentle-engram
 ```
 
-Restart DSH after installation. The package is a Host bundle: its `cordis.patch.yml` owns both the MCP bridge and lifecycle plugin. Do not edit shipped presets or add a second manual [Engram](https://github.com/Gentleman-Programming/engram) MCP row.
+Restart DeepSeek Harness afterwards. The package is a Host bundle: its
+`cordis.patch.yml` owns the lifecycle plugin and the tool surface.
 
-Check that [Engram](https://github.com/Gentleman-Programming/engram) is available before starting DSH:
+> **Do not add a second Engram MCP row.** Two rows with the same `serverName` in one scope
+> fail the profile at load. This bundle intentionally contributes none.
 
-```bash
-engram --version
+## Configuration
+
+Set on the inserted row in your profile (or the host patch layer):
+
+```yaml
+- insert:
+    - id: engram-memory
+      name: dsh-gentle-engram
+      config:
+        binary: engram          # Engram executable used to spawn serve
+        contextLimit: 8000      # characters of recovered context injected per session
+        captureToolResults: true
+        capturePrompts: true
 ```
 
-## Local development
+Environment variables (same names as the upstream Pi adapter):
+
+| Variable | Effect |
+| --- | --- |
+| `ENGRAM_URL` | Use an already-running server. The plugin then never spawns or restarts one. |
+| `ENGRAM_BIN` | Engram executable path. |
+| `ENGRAM_PORT` | Port for the implicitly owned server (default 7437). |
+
+## Tools
+
+Eighteen native tools, matching Engram's `agent` MCP profile except where noted:
+
+`mem_save`, `mem_search`, `mem_context`, `mem_session_summary`, `mem_session_start`,
+`mem_session_end`, `mem_get_observation`, `mem_suggest_topic_key`, `mem_capture_passive`,
+`mem_save_prompt`, `mem_update`, `mem_current_project`, `mem_judge`, `mem_compare`,
+`mem_doctor`, `mem_review`, `mem_pin`, `mem_unpin`.
+
+Three deliberate differences from the MCP originals:
+
+- **`mem_list_projects` is absent.** Its handler calls the store directly and Engram exposes
+  no HTTP route for it. Use `mem_search` with `all_projects: true` instead.
+- **`mem_delete` is absent.** Its route is behind `requireAuth`, so it would fail in a
+  default installation.
+- **`mem_session_start` / `mem_session_end` take no model-supplied session id.** Session
+  identity belongs to the plugin; letting the model mint keys would desynchronise every
+  later capture.
+
+## Multi-repository workspaces
+
+Engram refuses to guess which project a directory belongs to. If you start DeepSeek Harness
+from a directory containing several repositories, project resolution fails and **no memory
+is written** - deliberately, rather than filing memories under the wrong project.
+
+Fix it by adding a config file at the workspace root:
+
+```json
+{ "project_name": "my-project" }
+```
+
+The plugin logs an actionable warning when this happens; it never injects the error text
+into the model's context.
+
+## Private blocks
+
+Wrap anything that must not be persisted:
+
+```text
+<private>
+do not store this verbatim
+</private>
+```
+
+Redaction replaces the block with `[REDACTED]` and applies recursively to every outgoing
+string. This is a convenience convention, **not** a secret scanner - it will not detect
+credentials you did not mark.
+
+## Compaction recovery
+
+When the harness compacts a session, the summary is archived to Engram and the next turn
+receives outcome-specific guidance with four possible states:
+
+- **Confirmed** - already saved; no manual action needed.
+- **Failed** - a manual `mem_session_summary` fallback is offered.
+- **Unknown** (timeout) - the write may have landed; verify with `mem_search` or
+  `mem_doctor` before retrying, never blindly.
+- **Unavailable** - no trustworthy session or project, so nothing was archived.
+
+## Session identity
+
+The Engram session key is the harness agent id, so a resumed session keeps its binding.
+Sessions are never auto-ended on disposal (a templated summary written on every disposal is
+noise); `mem_session_summary` is the model's job under the session-close protocol.
+
+If the model does call `mem_session_end`, the next write detects it and starts a **new** Engram
+session instead of filing memories under a closed one. Ending is therefore not a dead end: the
+closed row keeps its own end time and summary, and work that continues gets a fresh session row.
+
+A row that disappears or is closed behind the plugin's back (`engram delete session`, the CLI)
+is handled by the same check, re-run at most once a minute: the row is re-created, or replaced
+if it had ended. The plugin does not trust a registration it confirmed an hour ago.
+
+Registration is **lazy**: the row is created by the first thing that actually produces
+memory — a `mem_*` write, a captured prompt, a captured tool result, or a compaction
+archive — and never by session start. Resolving the project and fetching the injected
+context are read-only, so an agent the harness merely publishes (a workspace the GUI
+reopened but nobody typed in) leaves no row behind. Reads (`mem_search`,
+`mem_context`, `mem_doctor`, …) never create one either. Engram enforces a foreign key
+from observations and prompts to the session row, so the row is created and awaited
+strictly before the first attributed write; a failed attempt is retried on the next
+write rather than being remembered as success.
+
+## Development
 
 ```bash
 pnpm install
@@ -50,35 +152,45 @@ pnpm run typecheck
 pnpm run build
 ```
 
-## Contributing
+Install the plugin **by directory** so `node_modules` links to this checkout
+(`dsh plugin --profile web add /path/to/dsh-gentle-engram`); a tarball install
+would need a reinstall on every change.
 
-Contributions, bug reports, documentation updates, and focused feature
-proposals are welcome. For the complete workflow, coding expectations, and pull
-request checklist, see [`CONTRIBUTING.md`](CONTRIBUTING.md).
+### Live reload
 
-Before starting:
+With module HMR enabled, `pnpm run build` hot-reloads the running harness — no
+restart. Three things about it are non-obvious and cost real debugging time:
 
-- Check existing [issues](https://github.com/eehcx/dsh-gentle-engram/issues) and
-  pull requests to avoid duplicate work.
-- Open an issue first for larger changes so the approach can be discussed.
-- Do not include secrets, personal Engram data, local database files, or
-  machine-specific configuration in commits.
+1. **The `hmr` row must be enabled at boot.** `dsh-base` ships it
+   `disabled: true`, so at boot the launcher creates a config-only fallback
+   with `root: []` that then owns the `hmr` service. Enabling the row later
+   through a live profile patch cannot add module roots to that instance — it
+   takes one restart. `patchReload: live` alone only reloads **config** files.
+2. **The build must not clean.** `cordis-plugin-hmr` acts only on `change`
+   events (`if (kind !== 'change') return`). A cleaning build deletes `dist/`
+   first, so the watcher sees `unlink`+`add` and never reloads. That is why
+   `tsdown.config.ts` sets `clean: false`.
+3. **A reload gives the plugin a fresh, empty session registry** while agents
+   keep running, and no `agent/session-start` fires again. Every tool therefore
+   re-initialises its session lazily rather than assuming `agent/session-start`
+   already ran — and the prompt/passive capture listeners rebuild the state from
+   the agent carried on their own event instead of skipping when it is missing.
+   Bailing out there silently disabled all memory capture until the model
+   happened to call a `mem_*` tool.
 
-For a typical change:
+Profile patch:
 
-1. Fork the repository and create a focused branch.
-2. Install dependencies with `pnpm install`.
-3. Make the smallest change that solves the problem, preserving existing
-   TypeScript and Cordis patterns.
-4. Run `pnpm run typecheck` and `pnpm run build`.
-5. Open a pull request explaining what changed, why, and how it was validated.
-
-Keep pull requests focused, avoid editing generated `dist/` output directly,
-and do not include unrelated formatting or dependency changes. Please report
-suspected security vulnerabilities privately rather than in a public issue.
+```yaml
+- id: hmr
+  disabled: false
+  config:
+    root:
+      - /path/to/dsh-gentle-engram/dist
+    ignored:
+      - '**/node_modules'
+    debounce: 100
+```
 
 ## License
 
-This project is released under the MIT License. See [`LICENSE`](LICENSE) for
-the complete license text.
-
+MIT
