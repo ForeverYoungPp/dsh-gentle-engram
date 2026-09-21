@@ -134,6 +134,17 @@ export function apply(ctx: PluginContext, rawConfig?: RawEngramConfig): void {
   const server = createServerManager(config, client, ctx.logger)
   const sessions = createSessionRegistry(ctx.logger)
 
+  /**
+   * Agent ids whose Engram session is being closed.
+   *
+   * A disposed agent's row still has to be ended, but two things can arrive for
+   * that id afterwards: late work from the incarnation that just died, and a
+   * session resumed under the same agent id. `agent/session-start` clears the
+   * marker, so a genuine resume reopens the id while anything else that shows up
+   * late is the dying incarnation and must not create a row of its own.
+   */
+  const closingSessions = new Set<string>()
+
   const summarize = async (state: SessionState, content: string): Promise<JsonValue> => {
     const project = state.project?.kind === 'resolved' ? state.project.project : undefined
     if (project === undefined) throw new Error(`Engram cannot resolve this workspace's project. ${ambiguityGuidance([])}`)
@@ -240,6 +251,9 @@ export function apply(ctx: PluginContext, rawConfig?: RawEngramConfig): void {
    */
   async function registerSession(state: SessionState, project: string): Promise<void> {
     state.registration ??= (async () => {
+      // Late work from a disposed incarnation must not register a row; a resumed
+      // session cleared this marker in its own `agent/session-start`.
+      if (closingSessions.has(state.id)) return
       if (state.ended || await rowHasEnded(state.engramSessionId)) {
         ctx.logger.warn(`engram: session ${state.engramSessionId} had already ended; starting a fresh Engram session`)
         state.engramSessionId = randomUUID()
@@ -319,6 +333,8 @@ export function apply(ctx: PluginContext, rawConfig?: RawEngramConfig): void {
   }
 
   ctx.on('agent/session-start', ((payload: { agent: SessionAgent }) => {
+    // A fresh session for this id reopens it: whatever was closing is gone.
+    closingSessions.delete(payload.agent.id)
     void startSession(payload.agent).catch((error: unknown) => {
       warnCapture(ctx.logger, 'session start', error)
     })
@@ -443,13 +459,69 @@ export function apply(ctx: PluginContext, rawConfig?: RawEngramConfig): void {
     await sessions.drain(state, DRAIN_TIMEOUT_MS)
   }) as never)
 
-  // Disposal is fire-and-forget and the agent is already gone from the
-  // registry, so only local state is released here. No summary is written: a
-  // hardcoded template saved on every session is noise, and the real summary
-  // is the model's job under the session-close protocol.
+  /** End one Engram session row, unless Engram already closed it. */
+  async function endSessionRow(sessionId: string): Promise<void> {
+    // Engram's end route rewrites `summary` on every call, so a row that ended
+    // elsewhere must be left alone rather than re-ended with an empty one.
+    if (await rowHasEnded(sessionId)) return
+    await client.request(`/sessions/${encodeURIComponent(sessionId)}/end`, {
+      method: 'POST',
+      body: { summary: '' },
+    })
+  }
+
+  /**
+   * Close this plugin's own Engram session when its agent goes away.
+   *
+   * Engram never expires a session row by itself, so a writer that never ends
+   * one leaves an open row behind for every session it runs — and those rows
+   * accumulate into the doctor's "ambiguous active runtime sessions" count, which
+   * makes every CLI write that omits a session id fail closed.
+   *
+   * Only this plugin's own row is touched, and only when it was registered and
+   * is still open. No summary is written here — a hardcoded template on every
+   * session is noise, and the real summary is the model's job.
+   */
+  function endOwnSession(state: SessionState): void {
+    if (!state.registered || state.ended) return
+    // Queued behind this session's writes so nothing lands after the close.
+    void sessions.enqueue(state, async () => {
+      // Disposal can race this session's own first registration, which runs
+      // outside the queue. Wait for it, then re-read the flags: the check above
+      // may have seen `registered` before that registration landed, and skipping
+      // the close here would leak exactly the row this exists to close.
+      await state.registration
+      if (!state.registered || state.ended) return
+      // A session-start cleared the marker, so the id was resumed. Ending now
+      // would close the new incarnation's row instead.
+      if (!closingSessions.has(state.id)) return
+      await endSessionRow(state.engramSessionId)
+    }).catch((error: unknown) => warnCapture(ctx.logger, 'session end', error))
+  }
+
+  // Disposal is fire-and-forget and the agent is already gone from the registry,
+  // so local state is released here after a best-effort close. A resumed agent
+  // re-keys its Engram session rather than reopening this one; that rotation is
+  // the plugin's normal behaviour for a session that ended.
   ctx.on('agent/disposed', ((payload: { agent?: { id: string } }) => {
     const id = payload.agent?.id
-    if (id !== undefined) sessions.forget(id)
+    if (id === undefined) return
+    // Read the state before forgetting it: the row key lives there.
+    const state = sessions.get(id)
+    closingSessions.add(id)
+    if (state !== undefined) {
+      endOwnSession(state)
+    } else {
+      // A hot reload left this instance with an empty registry, and a rotated key
+      // is unrecoverable from here — but an agent id is still the row key whenever
+      // the row never rotated, and rotation only happens once a row has ended, so
+      // an open row under the agent id is this agent's own.
+      void (async () => {
+        if (!closingSessions.has(id)) return
+        await endSessionRow(id)
+      })().catch((error: unknown) => warnCapture(ctx.logger, 'session end', error))
+    }
+    sessions.forget(id)
   }) as never)
 
   ctx.inject(['systemPrompt'], scope => {
