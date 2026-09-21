@@ -1,0 +1,9 @@
+{
+  "release-type": "node",
+  "packages": {
+    ".": {
+      "package-name": "dsh-gentle-engram"
+    }
+  },
+  "bump-minor-pre-major": true
+}
