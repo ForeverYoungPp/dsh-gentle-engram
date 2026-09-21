@@ -37,7 +37,10 @@ export function redactUrlPath(path: string): string {
 
 /**
  * Recursively redact strings in an outgoing payload. Object and array shape is
- * preserved; non-string primitives pass through unchanged.
+ * preserved; non-string primitives pass through unchanged. Both sides stay
+ * `unknown` on purpose: this is a shape-preserving pass-through, not a parser.
+ * Narrowing them to `JsonValue` would narrow the client's request body type too,
+ * and that then rejects every call site that builds a body with an optional field.
  */
 export function redactValue(value: unknown): unknown {
   if (typeof value === 'string') return redactPrivateTags(value)

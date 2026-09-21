@@ -144,13 +144,10 @@ export function buildRecoveryNotice(
   context: string | undefined,
   outcome: ArchiveOutcome,
 ): string {
-  const instruction = outcome === ArchiveOutcome.Confirmed
-    ? persistedAcknowledgement(project)
-    : outcome === ArchiveOutcome.Unknown
-      ? unknownArchiveInstruction(project)
-      : outcome === ArchiveOutcome.Unavailable
-        ? unavailableRecoveryInstruction()
-        : manualFallback(project)
+  let instruction = manualFallback(project)
+  if (outcome === ArchiveOutcome.Confirmed) instruction = persistedAcknowledgement(project)
+  else if (outcome === ArchiveOutcome.Unknown) instruction = unknownArchiveInstruction(project)
+  else if (outcome === ArchiveOutcome.Unavailable) instruction = unavailableRecoveryInstruction()
   const prefix = context === undefined ? '' : `${context}\n\n`
   return `${prefix}${instruction}`
 }

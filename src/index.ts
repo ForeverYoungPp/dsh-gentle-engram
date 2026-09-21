@@ -47,12 +47,20 @@ interface SystemPromptService {
   }): () => void
 }
 
+/** Cancels one Cordis event registration; the boolean reports whether it was attached. */
+type EventDisposer = () => boolean
+
+/** The fiber `inject()` returns. Only its disposal is part of this surface. */
+interface InjectionFiber {
+  readonly dispose: () => Promise<void>
+}
+
 /** The Cordis surface this plugin uses. */
 interface PluginContext {
   readonly logger: Logger
   readonly tools: { register(definition: unknown): () => void }
-  on(event: string, listener: (...args: never[]) => unknown): unknown
-  inject(deps: readonly string[], callback: (scope: PluginContext & { readonly systemPrompt: SystemPromptService }) => void): unknown
+  on(event: string, listener: (...args: never[]) => unknown): EventDisposer
+  inject(deps: readonly string[], callback: (scope: PluginContext & { readonly systemPrompt: SystemPromptService }) => void): InjectionFiber
 }
 
 /**
