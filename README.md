@@ -1,5 +1,7 @@
 # dsh-gentle-engram
 
+[![npm](https://img.shields.io/npm/v/@ian_p/dsh-gentle-engram)](https://www.npmjs.com/package/@ian_p/dsh-gentle-engram)
+
 HTTP-native [Engram](https://github.com/Gentleman-Programming/engram) persistent memory for
 DeepSeek Harness. The plugin registers native `mem_*` tools, captures prompts and tool
 learnings, and keeps a session's memory alive across compactions.
@@ -122,8 +124,10 @@ receives outcome-specific guidance with four possible states:
 ## Session identity
 
 The Engram session key is the harness agent id, so a resumed session keeps its binding.
-Sessions are never auto-ended on disposal (a templated summary written on every disposal is
-noise); `mem_session_summary` is the model's job under the session-close protocol.
+Disposal closes the plugin's own session row, best-effort and without a summary. Engram never
+expires a row by itself, so leaving it open would accumulate one row per session the plugin
+ever ran - and the doctor's *ambiguous active runtime sessions* check counts exactly those
+rows. `mem_session_summary` remains the model's job under the session-close protocol.
 
 If the model does call `mem_session_end`, the next write detects it and starts a **new** Engram
 session instead of filing memories under a closed one. Ending is therefore not a dead end: the
