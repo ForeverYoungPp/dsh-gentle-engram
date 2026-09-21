@@ -3,6 +3,9 @@
   "version": "0.2.0",
   "type": "module",
   "packageManager": "pnpm@10.15.0",
+  "engines": {
+    "node": ">=22.18"
+  },
   "description": "HTTP-native Engram persistent memory integration for DeepSeek Harness",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -45,6 +48,7 @@
   "scripts": {
     "build": "tsdown",
     "typecheck": "tsc -p tsconfig.json",
+    "test": "node --test",
     "prepublishOnly": "pnpm run typecheck && pnpm run build"
   },
   "peerDependencies": {
