@@ -5,8 +5,7 @@ DeepSeek Harness. The plugin registers native `mem_*` tools, captures prompts an
 learnings, and keeps a session's memory alive across compactions.
 
 This is a **0.2.0 rewrite**. Version 0.1.x bridged Engram's MCP server; that approach could
-not be made correct, for reasons recorded in [DESIGN.md](./DESIGN.md) and
-[PI-PORT.md](./PI-PORT.md).
+not be made correct, for reasons recorded in [DESIGN.md](./DESIGN.md).
 
 ## Why HTTP instead of MCP
 
