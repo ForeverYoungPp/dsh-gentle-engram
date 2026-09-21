@@ -1,6 +1,6 @@
 # Apply Progress — add-test-harness
 
-Status: in progress — work unit 1 of 3 complete; work units 2 and 3 pending.
+Status: in progress — work units 1–2 of 3 complete; work unit 3 pending.
 Change: `add-test-harness`
 Store: openspec — `openspec/changes/add-test-harness/apply-progress.md`
 Spec: `openspec/changes/add-test-harness/specs/testing/spec.md`
@@ -19,8 +19,7 @@ Strict TDD is not active for this run by design (`openspec/config.yaml` still re
 
 Tasks completed in this unit, each marked in `tasks.md` immediately after its outcome was
 observed: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 1.10.
-Commit: work-unit commit 1 ("test: add Node stdlib test harness with pilot redaction test");
-its SHA is recorded in the final apply report (a commit cannot record its own id).
+Commit: work-unit commit 1 (ec11052, "test: add Node stdlib test harness with pilot redaction test").
 
 Files changed by this unit:
 - `package.json` — `scripts.test` and `engines.node` only (below).
@@ -369,9 +368,8 @@ green `pnpm test` runs.
 
 ## Bootstrap exception (strict TDD)
 
-- Ordering: runner script + pilot test landed in work-unit commit 1; `strict_tdd` flipped in
-  work-unit commit 3 (last). Neither commit SHA can be listed inside itself; the three SHAs are
-  recorded in the final apply/delivery report and re-derivable read-only via `git log`.
+- Ordering: runner script + pilot test landed in work-unit commit 1 (ec11052); `strict_tdd` is flipped in
+  work-unit commit 3 (last; its own SHA is recorded in the final apply report — a commit cannot record its own id).
 - Why: a config-first flip would make this change unsatisfiable under its own gate —
   no production code exists to make RED, and a missing script is a config error, not a failing test.
 - Substitute gate evidence for this change: the negative control above (one inverted
@@ -384,15 +382,125 @@ Single PR containing three work-unit commits, per the tasks' Review Workload For
 (risk Low, chained PRs No, no `size:exception` needed). Work unit 1 is one commit; work units
 2 and 3 follow in order, with the strict-TDD flip last.
 
+## Work unit 2 — CI test gate + contributor contract
+
+Tasks completed in this unit, each marked in `tasks.md` after its outcome was observed:
+2.1, 2.2, 2.3, 2.4. Commit: work-unit commit 2
+("ci: gate checks on pnpm test and document the test contract"); its SHA is recorded in the
+final apply report.
+
+Files changed by this unit:
+- `.github/workflows/ci.yml` — `Test` step (`run: pnpm test`) between `Typecheck` and `Build`.
+- `CONTRIBUTING.md` — `pnpm test` in the Validation command block plus the convention line.
+- this `apply-progress.md` (re-staged).
+
+### `ci.yml` diff and step position (task 2.1)
+
+`git diff .github/workflows/ci.yml` as staged in work unit 2:
+
+```diff
+diff --git i/.github/workflows/ci.yml w/.github/workflows/ci.yml
+index d82b9ae..866831a 100644
+--- i/.github/workflows/ci.yml
++++ w/.github/workflows/ci.yml
+@@ -34,5 +34,8 @@ jobs:
+       - name: Typecheck
+         run: pnpm run typecheck
+ 
++      - name: Test
++        run: pnpm test
++
+       - name: Build
+         run: pnpm run build
+exit=0
+```
+
+The only diff hunks are the added `Test` step; nothing else changed. `checks` job read top to
+bottom (`sed -n '/^  checks:/,$p' .github/workflows/ci.yml`):
+
+```text
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Audit dependencies
+        run: pnpm audit --audit-level=high
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build
+        run: pnpm run build
+```
+
+`node-version: 22` is unchanged (line 25 of the file):
+
+```text
+25:          node-version: 22
+```
+
+No matrix, no `continue-on-error`, no `|| true` (grep → none present). The file still parses
+as YAML (`python3 -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml'))"` → ok),
+and the rest of the file is byte-identical apart from the added step.
+
+### `CONTRIBUTING.md` diff (task 2.2)
+
+`git diff CONTRIBUTING.md` as staged in work unit 2:
+
+```diff
+diff --git i/CONTRIBUTING.md w/CONTRIBUTING.md
+index 8e7a0f8..b8ce9c3 100644
+--- i/CONTRIBUTING.md
++++ w/CONTRIBUTING.md
+@@ -46,10 +46,13 @@ patterns, and update documentation when behavior or configuration changes.
+ Run the checks before committing:
+ 
+ ```bash
++pnpm test
+ pnpm run typecheck
+ pnpm run build
+ ```
+ 
++Tests are colocated at `src/**/*.test.ts`, use only the Node standard library (`node:test` / `node:assert`), add no dependencies, and remain erasable TypeScript — no `enum`, `namespace`, or constructor parameter properties.
++
+ If your change affects runtime behavior, test it with a local DSH profile when
+ possible and describe the test environment in the pull request.
+ 
+exit=0
+```
+
+The Validation section now lists `pnpm test` alongside `pnpm run typecheck` and
+`pnpm run build`, and the single convention line states colocation at `src/**/*.test.ts`,
+stdlib-only `node:test`/`node:assert`, no new dependencies, and the erasable-TypeScript
+constraint (no `enum`, `namespace`, or constructor parameter properties).
+
+Staging note: `tasks.md` was additionally staged in this commit (one-line deviation from the
+design's explicit staging list, disclosed in full in the work-unit-3 section) so that both the
+mandatory persisted-checkbox contract and the required end state (`git status --short` exactly
+`?? .pi/`) hold.
+
 ## Remaining tasks
 
-- [ ] 2.1 CI `Test` step between `Typecheck` and `Build`
-- [ ] 2.2 `CONTRIBUTING.md` validation + convention line
-- [ ] 2.3 append work-unit-2 evidence here
-- [ ] 2.4 commit work unit 2
 - [ ] 3.1 `openspec/config.yaml` strict-TDD target state
 - [ ] 3.2 `openspec/config.yaml` context refresh
 - [ ] 3.3 append work-unit-3 evidence here
 - [ ] 3.4 commit work unit 3 (last)
-- [ ] 3.5 post-commit read-only end-state verification (reported, not appended)
+- [ ] 3.5 post-commit read-only end-state verification (reported, not appended — a commit cannot record its own SHA; the read-only checks themselves are written into the final report)
 - [ ] 4.1 deferred: CI rung-0 evidence requires the branch to be pushed (human decision); no push was performed. When pushed, record workflow run URL/id, commit SHA, `Test` step conclusion, and a log excerpt naming `src/redaction.test.ts` with pass counts in the change report and PR body; if the step fails on Node 22, walk the design's contingency ladder in order (rung 1 explicit-path script pre-authorized, spec amended in the same change and noted here; rung 2 CI Node bump pauses for explicit user consent under ask-on-risk; otherwise stop and report blocked). `engines.node: ">=22.18"` unchanged at every rung.

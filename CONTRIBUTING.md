@@ -46,9 +46,12 @@ patterns, and update documentation when behavior or configuration changes.
 Run the checks before committing:
 
 ```bash
+pnpm test
 pnpm run typecheck
 pnpm run build
 ```
+
+Tests are colocated at `src/**/*.test.ts`, use only the Node standard library (`node:test` / `node:assert`), add no dependencies, and remain erasable TypeScript — no `enum`, `namespace`, or constructor parameter properties.
 
 If your change affects runtime behavior, test it with a local DSH profile when
 possible and describe the test environment in the pull request.

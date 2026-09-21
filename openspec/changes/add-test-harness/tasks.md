@@ -66,10 +66,10 @@ Three work-unit commits, created in order. Each stages an explicit path list; `g
 
 ### Commit 2 — CI test gate + contributor contract
 
-- [ ] 2.1 In `.github/workflows/ci.yml`, add a step `- name: Test` with `run: pnpm test` to the `checks` job **after** `Typecheck` and **before** `Build`; change nothing else — `node-version: 22` stays, no matrix, no `continue-on-error`, no `|| true`. Verify the step order by reading the job top to bottom. (Requirement: CI Test Gate)
-- [ ] 2.2 In `CONTRIBUTING.md`, add `pnpm test` to the Validation section's command block alongside `pnpm run typecheck` and `pnpm run build`, plus one convention line: tests are colocated at `src/**/*.test.ts`, use only the stdlib `node:test`/`node:assert`, add no dependencies, and remain erasable TypeScript (no `enum`, `namespace`, or parameter properties). (Requirement: Contributor Test Contract)
-- [ ] 2.3 Append the work-unit-2 evidence to `openspec/changes/add-test-harness/apply-progress.md`: the `ci.yml` diff with the `Test` step and its position, the `node-version: 22` line quoted, and the `CONTRIBUTING.md` diff lines. (Requirements: CI Test Gate; Contributor Test Contract)
-- [ ] 2.4 Commit work unit 2: `git add -- .github/workflows/ci.yml CONTRIBUTING.md openspec/changes/add-test-harness/apply-progress.md` then `git commit -m "ci: gate checks on pnpm test and document the test contract"`.
+- [x] 2.1 In `.github/workflows/ci.yml`, add a step `- name: Test` with `run: pnpm test` to the `checks` job **after** `Typecheck` and **before** `Build`; change nothing else — `node-version: 22` stays, no matrix, no `continue-on-error`, no `|| true`. Verify the step order by reading the job top to bottom. (Requirement: CI Test Gate)
+- [x] 2.2 In `CONTRIBUTING.md`, add `pnpm test` to the Validation section's command block alongside `pnpm run typecheck` and `pnpm run build`, plus one convention line: tests are colocated at `src/**/*.test.ts`, use only the stdlib `node:test`/`node:assert`, add no dependencies, and remain erasable TypeScript (no `enum`, `namespace`, or parameter properties). (Requirement: Contributor Test Contract)
+- [x] 2.3 Append the work-unit-2 evidence to `openspec/changes/add-test-harness/apply-progress.md``: the `ci.yml` diff with the `Test` step and its position, the `node-version: 22` line quoted, and the `CONTRIBUTING.md` diff lines. (Requirements: CI Test Gate; Contributor Test Contract)
+- [x] 2.4 Commit work unit 2: `git add -- .github/workflows/ci.yml CONTRIBUTING.md openspec/changes/add-test-harness/apply-progress.md` then `git commit -m "ci: gate checks on pnpm test and document the test contract"`.
 
 ### Commit 3 — strict-TDD flip (last)
 
