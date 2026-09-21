@@ -21,6 +21,7 @@
  */
 
 import { spawn, type ChildProcess } from 'node:child_process'
+import { setTimeout as sleep } from 'node:timers/promises'
 import type { EngramConfig } from '../config.ts'
 import type { EngramClient, Logger } from './client.ts'
 
@@ -28,8 +29,6 @@ import type { EngramClient, Logger } from './client.ts'
 export interface ServerManager {
   /** Ensure a server is answering, spawning one if needed and allowed. */
   ensure(): Promise<void>
-  /** Stop owning recovery state. Does not kill a healthy child. */
-  dispose(): void
 }
 
 const STARTUP_POLL_MS = 100
@@ -37,22 +36,14 @@ const STARTUP_RETRY_BASE_MS = 1000
 const STARTUP_RETRY_MAX_MS = 60_000
 
 /** A sleep an abandoned readiness wait can cut short. */
-function waitCancellable(ms: number, signal: AbortSignal): Promise<void> {
-  return new Promise(resolve => {
-    if (signal.aborted) {
-      resolve()
-      return
-    }
-    const onAbort = (): void => {
-      clearTimeout(timer)
-      resolve()
-    }
-    const timer = setTimeout(() => {
-      signal.removeEventListener('abort', onAbort)
-      resolve()
-    }, ms)
-    signal.addEventListener('abort', onAbort, { once: true })
-  })
+async function waitCancellable(ms: number, signal: AbortSignal): Promise<void> {
+  // timers/promises rejects on abort; the caller re-checks the signal afterwards,
+  // so an abort is an early wake rather than a failure.
+  try {
+    await sleep(ms, undefined, { signal })
+  } catch {
+    // ignored on purpose
+  }
 }
 
 /**
@@ -86,7 +77,6 @@ export function createServerManager(config: EngramConfig, client: EngramClient, 
   let initializationGeneration = 0
   let recoveredGeneration = 0
   let recoveryFlight: { generation: number; promise: Promise<boolean> } | undefined
-  let disposed = false
 
   function startupBackoffMs(failures: number): number {
     return Math.min(STARTUP_RETRY_MAX_MS, STARTUP_RETRY_BASE_MS * 2 ** (failures - 1))
@@ -211,7 +201,7 @@ export function createServerManager(config: EngramConfig, client: EngramClient, 
   // failed restart from becoming a spawn storm.
   function recover(): Promise<boolean> {
     const generation = initializationGeneration
-    if (config.url !== undefined || generation === 0 || disposed) return Promise.resolve(false)
+    if (config.url !== undefined || generation === 0) return Promise.resolve(false)
     const active = recoveryFlight
     if (active?.generation === generation) return active.promise
     if (recoveredGeneration === generation) return Promise.resolve(false)
@@ -227,18 +217,12 @@ export function createServerManager(config: EngramConfig, client: EngramClient, 
 
   return {
     async ensure(): Promise<void> {
-      if (disposed) return
       try {
         await sharedInitialization()
       } catch (error: unknown) {
         logger.warn(`engram server unavailable at ${client.baseUrl}: ${error instanceof Error ? error.message : String(error)}`)
         throw error
       }
-    },
-    dispose(): void {
-      disposed = true
-      recoveryFlight = undefined
-      client.setRecovery(undefined)
     },
   }
 }

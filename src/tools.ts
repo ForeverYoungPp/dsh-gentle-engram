@@ -84,18 +84,6 @@ function queryString(params: Record<string, unknown>): string {
 }
 
 /**
- * Resolve the calling agent's session state and wait for its read-only warm-up
- * (project resolution, context cache).
- *
- * This deliberately does NOT create the Engram session row. Reading memory is
- * not a reason to leave a row behind, and an agent that never writes anything
- * should not show up in Engram at all. Write paths use {@link sessionForWrite}.
- *
- * Lazily re-initialising matters in two cases: a tool call can win the race
- * against the non-awaited `agent/session-start` notification, and a hot reload
- * gives the plugin a fresh empty registry while the agent is still running.
- */
-/**
  * Fetch one Engram session row.
  *
  * @param client - the transport to use.
@@ -121,6 +109,18 @@ function endedAtOf(row: JsonValue): JsonValue {
   return (row as Record<string, JsonValue>).ended_at ?? null
 }
 
+/**
+ * Resolve the calling agent's session state and wait for its read-only warm-up
+ * (project resolution, context cache).
+ *
+ * This deliberately does NOT create the Engram session row. Reading memory is
+ * not a reason to leave a row behind, and an agent that never writes anything
+ * should not show up in Engram at all. Write paths use {@link sessionForWrite}.
+ *
+ * Lazily re-initialising matters in two cases: a tool call can win the race
+ * against the non-awaited `agent/session-start` notification, and a hot reload
+ * gives the plugin a fresh empty registry while the agent is still running.
+ */
 async function sessionFor(exec: ToolRunContext, deps: ToolDeps): Promise<SessionState> {
   const agent = exec.agent as SessionAgent | undefined
   if (agent === undefined) throw new Error('Engram memory tools require an agent session')
@@ -171,17 +171,17 @@ const MATCH_MODE = 'Match mode: all (default, AND) or any (broader recall).'
  *
  * @param register - the tools registry's `register`.
  * @param deps - resolved collaborators.
- * @returns disposers for every registration.
+ * @returns the names of every registered tool.
  */
 export function registerTools(
   register: (definition: ReturnType<typeof defineTool>) => () => void,
   deps: ToolDeps,
-): Array<() => void> {
-  const { client, sessions } = deps
-  const disposers: Array<() => void> = []
+): string[] {
+  const names: string[] = []
 
   const add = (definition: ReturnType<typeof defineTool>): void => {
-    disposers.push(register(definition))
+    names.push(definition.name)
+    register(definition)
   }
 
   add(defineTool({
@@ -527,5 +527,5 @@ export function registerTools(
       deps.client.request(`/observations/${encodeURIComponent(String(args.id))}/pin`, { method: 'DELETE', signal: exec.signal }),
   }))
 
-  return disposers
+  return names
 }

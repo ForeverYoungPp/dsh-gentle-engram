@@ -14,12 +14,12 @@
  * @module dsh-gentle-engram/engram/client
  */
 
+import { setTimeout as sleep } from 'node:timers/promises'
 import type { EngramConfig } from '../config.ts'
 import { redactUrlPath, redactValue } from '../redaction.ts'
 import {
   EngramHttpError,
   EngramTimeoutError,
-  hasConnectionRefusedCode,
   isConnectionRefusedError,
   isTimeoutError,
 } from './errors.ts'
@@ -74,13 +74,6 @@ export function isSafeToReplay(path: string, method: string): boolean {
   return method === 'GET' || (method === 'POST' && path === '/sessions')
 }
 
-function wait(ms: number): Promise<void> {
-  return new Promise(resolve => {
-    const timer = setTimeout(resolve, ms)
-    timer.unref?.()
-  })
-}
-
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
@@ -95,7 +88,7 @@ export function createClient(config: EngramConfig, logger: Logger): EngramClient
   const baseUrl = config.url ?? `http://127.0.0.1:${config.port}`
   let recovery: (() => Promise<boolean>) | undefined
 
-  async function attempt<T>(path: string, options: FetchOptions): Promise<{ response: Response } | { failure: unknown }> {
+  async function attempt(path: string, options: FetchOptions): Promise<{ response: Response } | { failure: unknown }> {
     const method = options.method ?? 'GET'
     const timeout = AbortSignal.timeout(config.requestTimeoutMs)
     const signal = options.signal === undefined ? timeout : AbortSignal.any([options.signal, timeout])
@@ -134,7 +127,7 @@ export function createClient(config: EngramConfig, logger: Logger): EngramClient
     const method = options.method ?? 'GET'
     let recovered = false
     for (let attemptIndex = 0; attemptIndex < config.fetchMaxAttempts; attemptIndex += 1) {
-      const outcome = await attempt<T>(path, options)
+      const outcome = await attempt(path, options)
       if ('response' in outcome) return { data: await decode<T>(outcome.response) }
 
       const error = outcome.failure
@@ -156,7 +149,7 @@ export function createClient(config: EngramConfig, logger: Logger): EngramClient
       if (!isSafeToReplay(path, method) || attemptIndex === config.fetchMaxAttempts - 1) {
         throw error
       }
-      await wait(250 * 2 ** attemptIndex)
+      await sleep(250 * 2 ** attemptIndex, undefined, { ref: false })
     }
     throw new EngramTimeoutError(`Engram request to ${redactUrlPath(path)} exhausted its attempts`)
   }
@@ -194,7 +187,7 @@ export function createClient(config: EngramConfig, logger: Logger): EngramClient
         return response.ok ? 'ready' : 'indeterminate'
       } catch (error: unknown) {
         if (isTimeoutError(error)) return 'indeterminate'
-        if (isConnectionRefusedError(error) || hasConnectionRefusedCode(error)) return 'refused'
+        if (isConnectionRefusedError(error)) return 'refused'
         return 'indeterminate'
       }
     },

@@ -62,7 +62,6 @@ export async function archiveSummary(
   state: SessionState,
   project: string,
   content: string,
-  topicKey?: string,
 ): Promise<JsonValue> {
   return client.request<JsonValue>('/observations', {
     method: 'POST',
@@ -73,7 +72,6 @@ export async function archiveSummary(
       title: 'Session summary',
       content,
       scope: 'project',
-      ...topicKey === undefined ? {} : { topic_key: topicKey },
     },
   })
 }

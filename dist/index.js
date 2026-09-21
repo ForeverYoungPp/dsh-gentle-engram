@@ -1,21 +1,11 @@
 import { randomUUID } from "node:crypto";
+import { setTimeout } from "node:timers/promises";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { defineTool } from "@deepseek-ai/dsh-tools";
 
 //#region src/config.ts
-const KNOWN_KEYS = new Set([
-	"binary",
-	"url",
-	"port",
-	"contextLimit",
-	"captureToolResults",
-	"capturePrompts",
-	"requestTimeoutMs",
-	"startupTimeoutMs",
-	"fetchMaxAttempts"
-]);
 /** Defaults for every non-environment field. */
 const DEFAULT_CONFIG = {
 	binary: "engram",
@@ -28,6 +18,7 @@ const DEFAULT_CONFIG = {
 	startupTimeoutMs: 1e4,
 	fetchMaxAttempts: 3
 };
+const KNOWN_KEYS = new Set(Object.keys(DEFAULT_CONFIG));
 /** Env override helper: first non-blank value wins. */
 function envString(name$1) {
 	const value = process.env[name$1]?.trim();
@@ -102,7 +93,7 @@ function blocksToText(blocks) {
 	}).filter((part) => part.length > 0).join("\n").trim();
 }
 /** Archive a session summary as an observation. */
-async function archiveSummary(client, state, project, content, topicKey) {
+async function archiveSummary(client, state, project, content) {
 	return client.request("/observations", {
 		method: "POST",
 		body: {
@@ -111,8 +102,7 @@ async function archiveSummary(client, state, project, content, topicKey) {
 			type: "session_summary",
 			title: "Session summary",
 			content,
-			scope: "project",
-			...topicKey === void 0 ? {} : { topic_key: topicKey }
+			scope: "project"
 		}
 	});
 }
@@ -293,11 +283,6 @@ const HEALTH_TIMEOUT_MS = 500;
 function isSafeToReplay(path, method) {
 	return method === "GET" || method === "POST" && path === "/sessions";
 }
-function wait$1(ms) {
-	return new Promise((resolve$1) => {
-		setTimeout(resolve$1, ms).unref?.();
-	});
-}
 function messageOf(error) {
 	return error instanceof Error ? error.message : String(error);
 }
@@ -356,7 +341,7 @@ function createClient(config, logger) {
 				continue;
 			}
 			if (!isSafeToReplay(path, method) || attemptIndex === config.fetchMaxAttempts - 1) throw error;
-			await wait$1(250 * 2 ** attemptIndex);
+			await setTimeout(250 * 2 ** attemptIndex, void 0, { ref: false });
 		}
 		throw new EngramTimeoutError(`Engram request to ${redactUrlPath(path)} exhausted its attempts`);
 	}
@@ -389,7 +374,7 @@ function createClient(config, logger) {
 				return (await fetch(`${baseUrl}/health`, { signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS) })).ok ? "ready" : "indeterminate";
 			} catch (error) {
 				if (isTimeoutError(error)) return "indeterminate";
-				if (isConnectionRefusedError(error) || hasConnectionRefusedCode(error)) return "refused";
+				if (isConnectionRefusedError(error)) return "refused";
 				return "indeterminate";
 			}
 		},
@@ -514,22 +499,10 @@ const STARTUP_POLL_MS = 100;
 const STARTUP_RETRY_BASE_MS = 1e3;
 const STARTUP_RETRY_MAX_MS = 6e4;
 /** A sleep an abandoned readiness wait can cut short. */
-function waitCancellable(ms, signal) {
-	return new Promise((resolve$1) => {
-		if (signal.aborted) {
-			resolve$1();
-			return;
-		}
-		const onAbort = () => {
-			clearTimeout(timer);
-			resolve$1();
-		};
-		const timer = setTimeout(() => {
-			signal.removeEventListener("abort", onAbort);
-			resolve$1();
-		}, ms);
-		signal.addEventListener("abort", onAbort, { once: true });
-	});
+async function waitCancellable(ms, signal) {
+	try {
+		await setTimeout(ms, void 0, { signal });
+	} catch {}
 }
 /**
 * A child we gave up on is terminated, not merely released. Unref'ing alone
@@ -559,7 +532,6 @@ function createServerManager(config, client, logger) {
 	let initializationGeneration = 0;
 	let recoveredGeneration = 0;
 	let recoveryFlight;
-	let disposed = false;
 	function startupBackoffMs(failures) {
 		return Math.min(STARTUP_RETRY_MAX_MS, STARTUP_RETRY_BASE_MS * 2 ** (failures - 1));
 	}
@@ -654,7 +626,7 @@ function createServerManager(config, client, logger) {
 	}
 	function recover() {
 		const generation = initializationGeneration;
-		if (config.url !== void 0 || generation === 0 || disposed) return Promise.resolve(false);
+		if (config.url !== void 0 || generation === 0) return Promise.resolve(false);
 		const active = recoveryFlight;
 		if (active?.generation === generation) return active.promise;
 		if (recoveredGeneration === generation) return Promise.resolve(false);
@@ -669,22 +641,14 @@ function createServerManager(config, client, logger) {
 		return promise;
 	}
 	client.setRecovery(recover);
-	return {
-		async ensure() {
-			if (disposed) return;
-			try {
-				await sharedInitialization();
-			} catch (error) {
-				logger.warn(`engram server unavailable at ${client.baseUrl}: ${error instanceof Error ? error.message : String(error)}`);
-				throw error;
-			}
-		},
-		dispose() {
-			disposed = true;
-			recoveryFlight = void 0;
-			client.setRecovery(void 0);
+	return { async ensure() {
+		try {
+			await sharedInitialization();
+		} catch (error) {
+			logger.warn(`engram server unavailable at ${client.baseUrl}: ${error instanceof Error ? error.message : String(error)}`);
+			throw error;
 		}
-	};
+	} };
 }
 
 //#endregion
@@ -749,21 +713,11 @@ If memory tools report an ambiguous project, the working directory contains more
 ### AFTER COMPACTION
 
 When outcome-specific compaction recovery guidance is present, follow it. If a compacted summary appears without that guidance, save it immediately with \`mem_session_summary\`, then call \`mem_context\` before continuing.`;
-/** The static protocol text contributed to every assembly. */
-function protocolText() {
-	return PROTOCOL_TEXT;
-}
 
 //#endregion
 //#region src/session.ts
 /** Default bound for draining a session's writes at a turn boundary. */
 const DRAIN_TIMEOUT_MS = 5e3;
-/** Sleep for at most `ms`, unref'd so a pending drain never holds the process open. */
-function wait(ms) {
-	return new Promise((resolve$1) => {
-		setTimeout(resolve$1, ms).unref?.();
-	});
-}
 /**
 * Create the registry.
 *
@@ -816,7 +770,7 @@ function createSessionRegistry(logger) {
 			while (state.pending > 0) {
 				const remaining = deadline - Date.now();
 				if (remaining <= 0) return;
-				await Promise.race([state.tail, wait(remaining)]);
+				await Promise.race([state.tail, setTimeout(remaining, void 0, { ref: false })]);
 			}
 		}
 	};
@@ -854,18 +808,6 @@ function queryString(params) {
 	return encoded.length > 0 ? `?${encoded}` : "";
 }
 /**
-* Resolve the calling agent's session state and wait for its read-only warm-up
-* (project resolution, context cache).
-*
-* This deliberately does NOT create the Engram session row. Reading memory is
-* not a reason to leave a row behind, and an agent that never writes anything
-* should not show up in Engram at all. Write paths use {@link sessionForWrite}.
-*
-* Lazily re-initialising matters in two cases: a tool call can win the race
-* against the non-awaited `agent/session-start` notification, and a hot reload
-* gives the plugin a fresh empty registry while the agent is still running.
-*/
-/**
 * Fetch one Engram session row.
 *
 * @param client - the transport to use.
@@ -886,6 +828,18 @@ function endedAtOf(row) {
 	if (row === null || typeof row !== "object" || Array.isArray(row)) return null;
 	return row.ended_at ?? null;
 }
+/**
+* Resolve the calling agent's session state and wait for its read-only warm-up
+* (project resolution, context cache).
+*
+* This deliberately does NOT create the Engram session row. Reading memory is
+* not a reason to leave a row behind, and an agent that never writes anything
+* should not show up in Engram at all. Write paths use {@link sessionForWrite}.
+*
+* Lazily re-initialising matters in two cases: a tool call can win the race
+* against the non-awaited `agent/session-start` notification, and a hot reload
+* gives the plugin a fresh empty registry while the agent is still running.
+*/
 async function sessionFor(exec, deps) {
 	const agent = exec.agent;
 	if (agent === void 0) throw new Error("Engram memory tools require an agent session");
@@ -944,13 +898,13 @@ const MATCH_MODE = "Match mode: all (default, AND) or any (broader recall).";
 *
 * @param register - the tools registry's `register`.
 * @param deps - resolved collaborators.
-* @returns disposers for every registration.
+* @returns the names of every registered tool.
 */
 function registerTools(register, deps) {
-	const { client, sessions } = deps;
-	const disposers = [];
+	const names = [];
 	const add = (definition) => {
-		disposers.push(register(definition));
+		names.push(definition.name);
+		register(definition);
 	};
 	add(defineTool({
 		name: "mem_save",
@@ -1295,34 +1249,13 @@ function registerTools(register, deps) {
 			signal: exec.signal
 		})
 	}));
-	return disposers;
+	return names;
 }
 
 //#endregion
 //#region src/index.ts
 const name = "dsh-gentle-engram";
 const inject = ["tools"];
-/** Tool names owned by this plugin; excluded from passive capture. */
-const OWN_TOOL_NAMES = new Set([
-	"mem_save",
-	"mem_search",
-	"mem_context",
-	"mem_session_summary",
-	"mem_session_start",
-	"mem_session_end",
-	"mem_get_observation",
-	"mem_suggest_topic_key",
-	"mem_capture_passive",
-	"mem_save_prompt",
-	"mem_update",
-	"mem_current_project",
-	"mem_judge",
-	"mem_compare",
-	"mem_doctor",
-	"mem_review",
-	"mem_pin",
-	"mem_unpin"
-]);
 /**
 * How long a *failed* project resolution is trusted before it is retried.
 *
@@ -1388,9 +1321,9 @@ function apply(ctx, rawConfig) {
 	const summarize = async (state, content) => {
 		const project = state.project?.kind === "resolved" ? state.project.project : void 0;
 		if (project === void 0) throw new Error(`Engram cannot resolve this workspace's project. ${ambiguityGuidance([])}`);
-		return archiveSummary(client, state, project, redactText(content), void 0);
+		return archiveSummary(client, state, project, redactText(content));
 	};
-	registerTools((definition) => ctx.tools.register(definition), {
+	const OWN_TOOL_NAMES = new Set(registerTools((definition) => ctx.tools.register(definition), {
 		client,
 		sessions,
 		logger: ctx.logger,
@@ -1398,7 +1331,7 @@ function apply(ctx, rawConfig) {
 		summarize,
 		startSession,
 		ensureRegistered
-	});
+	}));
 	/**
 	* Warm one session's read-only state: spawn/reuse the server, resolve the
 	* project, then cache the context block.
@@ -1651,7 +1584,7 @@ function apply(ctx, rawConfig) {
 			name: PROTOCOL_CONTEXT_NAME,
 			order: PROTOCOL_CONTEXT_ORDER,
 			text: (context) => {
-				const parts = [protocolText()];
+				const parts = [PROTOCOL_TEXT];
 				const state = context.agent === void 0 ? void 0 : sessions.get(context.agent.id);
 				if (state !== void 0 && state.contextText !== void 0) parts.push(`### Recovered Engram memory for this project\n\n${state.contextText}`);
 				if (state?.pendingNotice !== void 0) {

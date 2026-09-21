@@ -11,7 +11,7 @@
  */
 
 import { existsSync, readFileSync } from 'node:fs'
-import { basename, dirname, resolve } from 'node:path'
+import { dirname, resolve } from 'node:path'
 import type { EngramClient } from './client.ts'
 import { EngramHttpError } from './errors.ts'
 
@@ -84,11 +84,6 @@ export function detectLocalConfigProject(cwd: string): { project: string; path: 
     if (parent === current) return undefined
     current = parent
   }
-}
-
-/** Lower-cased directory name, used for display only — never for a write. */
-export function fallbackProjectName(cwd: string): string {
-  return basename(resolve(cwd || '.')).trim().toLowerCase() || 'unknown'
 }
 
 /** Human-actionable guidance for an unresolvable workspace. */

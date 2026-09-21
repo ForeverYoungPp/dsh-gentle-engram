@@ -27,7 +27,7 @@ import { EngramHttpError } from './engram/errors.ts'
 import { ambiguityGuidance, resolveProject } from './engram/project.ts'
 import { createServerManager } from './engram/server.ts'
 import type { JsonValue } from './json.ts'
-import { PROTOCOL_CONTEXT_NAME, PROTOCOL_CONTEXT_ORDER, protocolText } from './protocol.ts'
+import { PROTOCOL_CONTEXT_NAME, PROTOCOL_CONTEXT_ORDER, PROTOCOL_TEXT } from './protocol.ts'
 import { redactText } from './redaction.ts'
 import { createSessionRegistry, DRAIN_TIMEOUT_MS, type SessionAgent, type SessionState } from './session.ts'
 import { registerTools } from './tools.ts'
@@ -55,14 +55,6 @@ interface PluginContext {
   on(event: string, listener: (...args: never[]) => unknown): unknown
   inject(deps: readonly string[], callback: (scope: PluginContext & { readonly systemPrompt: SystemPromptService }) => void): unknown
 }
-
-/** Tool names owned by this plugin; excluded from passive capture. */
-const OWN_TOOL_NAMES = new Set([
-  'mem_save', 'mem_search', 'mem_context', 'mem_session_summary', 'mem_session_start',
-  'mem_session_end', 'mem_get_observation', 'mem_suggest_topic_key', 'mem_capture_passive',
-  'mem_save_prompt', 'mem_update', 'mem_current_project', 'mem_judge', 'mem_compare',
-  'mem_doctor', 'mem_review', 'mem_pin', 'mem_unpin',
-])
 
 /**
  * How long a *failed* project resolution is trusted before it is retried.
@@ -145,13 +137,13 @@ export function apply(ctx: PluginContext, rawConfig?: RawEngramConfig): void {
   const summarize = async (state: SessionState, content: string): Promise<JsonValue> => {
     const project = state.project?.kind === 'resolved' ? state.project.project : undefined
     if (project === undefined) throw new Error(`Engram cannot resolve this workspace's project. ${ambiguityGuidance([])}`)
-    return archiveSummary(client, state, project, redactText(content), undefined)
+    return archiveSummary(client, state, project, redactText(content))
   }
 
-  const disposers = registerTools(
-    definition => ctx.tools.register(definition) as unknown as () => void,
+  const OWN_TOOL_NAMES = new Set(registerTools(
+    definition => ctx.tools.register(definition),
     { client, sessions, logger: ctx.logger, config, summarize, startSession, ensureRegistered },
-  )
+  ))
 
   /**
    * Warm one session's read-only state: spawn/reuse the server, resolve the
@@ -468,7 +460,7 @@ export function apply(ctx: PluginContext, rawConfig?: RawEngramConfig): void {
       // session started. DSH re-projects this contribution after a surface
       // replacement, so the protocol survives compaction without re-injection.
       text: (context: AssembleContextLike) => {
-        const parts = [protocolText()]
+        const parts = [PROTOCOL_TEXT]
         const state = context.agent === undefined ? undefined : sessions.get(context.agent.id)
         if (state !== undefined && state.contextText !== undefined) {
           parts.push(`### Recovered Engram memory for this project\n\n${state.contextText}`)
@@ -481,6 +473,4 @@ export function apply(ctx: PluginContext, rawConfig?: RawEngramConfig): void {
       },
     })
   })
-
-  void disposers
 }

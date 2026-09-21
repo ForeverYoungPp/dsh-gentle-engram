@@ -42,11 +42,6 @@ export interface RawEngramConfig {
   readonly fetchMaxAttempts?: unknown
 }
 
-const KNOWN_KEYS = new Set([
-  'binary', 'url', 'port', 'contextLimit', 'captureToolResults', 'capturePrompts',
-  'requestTimeoutMs', 'startupTimeoutMs', 'fetchMaxAttempts',
-])
-
 /** Defaults for every non-environment field. */
 export const DEFAULT_CONFIG: EngramConfig = {
   binary: 'engram',
@@ -59,6 +54,8 @@ export const DEFAULT_CONFIG: EngramConfig = {
   startupTimeoutMs: 10_000,
   fetchMaxAttempts: 3,
 }
+
+const KNOWN_KEYS = new Set(Object.keys(DEFAULT_CONFIG))
 
 /** Env override helper: first non-blank value wins. */
 function envString(name: string): string | undefined {

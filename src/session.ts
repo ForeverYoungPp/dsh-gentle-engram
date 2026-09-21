@@ -13,7 +13,8 @@
  * @module dsh-gentle-engram/session
  */
 
-import type { EngramClient, Logger } from './engram/client.ts'
+import { setTimeout as sleep } from 'node:timers/promises'
+import type { Logger } from './engram/client.ts'
 import type { ProjectResolution } from './engram/project.ts'
 
 /** The agent fields this plugin reads. Structurally satisfied by DSH's Agent. */
@@ -93,14 +94,6 @@ export interface SessionRegistry {
 /** Default bound for draining a session's writes at a turn boundary. */
 export const DRAIN_TIMEOUT_MS = 5000
 
-/** Sleep for at most `ms`, unref'd so a pending drain never holds the process open. */
-function wait(ms: number): Promise<void> {
-  return new Promise(resolve => {
-    const timer = setTimeout(resolve, ms)
-    timer.unref?.()
-  })
-}
-
 /**
  * Create the registry.
  *
@@ -162,7 +155,7 @@ export function createSessionRegistry(logger: Logger): SessionRegistry {
       while (state.pending > 0) {
         const remaining = deadline - Date.now()
         if (remaining <= 0) return
-        await Promise.race([state.tail, wait(remaining)])
+        await Promise.race([state.tail, sleep(remaining, undefined, { ref: false })])
       }
     },
   }

@@ -52,29 +52,3 @@ export function hasConnectionRefusedCode(value: unknown, depth = 0): boolean {
 export function isConnectionRefusedError(error: unknown): boolean {
   return (error instanceof Error && error.message === 'connection refused') || hasConnectionRefusedCode(error)
 }
-
-/** Engram error codes this plugin reacts to by name. */
-export const ERROR_CODE = {
-  ambiguousProject: 'ambiguous_project',
-  projectOwnershipRequired: 'project_ownership_required',
-  sessionAlreadyEnded: 'session_already_ended',
-  unknownSession: 'unknown_session',
-} as const
-
-/** Read an Engram error code out of an HTTP error body, when present. */
-export function errorCodeOf(error: unknown): string | undefined {
-  if (!(error instanceof EngramHttpError)) return undefined
-  const data = error.data
-  if (data === null || typeof data !== 'object') return undefined
-  const code = (data as Record<string, unknown>).error_code ?? (data as Record<string, unknown>).code
-  return typeof code === 'string' ? code : undefined
-}
-
-/** Read Engram's `available_projects` hint, when present. */
-export function availableProjectsOf(error: unknown): string[] {
-  if (!(error instanceof EngramHttpError)) return []
-  const data = error.data
-  if (data === null || typeof data !== 'object') return []
-  const list = (data as Record<string, unknown>).available_projects
-  return Array.isArray(list) ? list.filter((entry): entry is string => typeof entry === 'string') : []
-}

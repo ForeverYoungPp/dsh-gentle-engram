@@ -14,7 +14,7 @@ export const PROTOCOL_CONTEXT_NAME = 'engram:protocol'
 /** Provider order: after tool guidance, before volatile runtime context. */
 export const PROTOCOL_CONTEXT_ORDER = 40
 
-const PROTOCOL_TEXT = `## Engram Persistent Memory — Protocol
+export const PROTOCOL_TEXT = `## Engram Persistent Memory — Protocol
 
 You have access to Engram, a persistent memory system that survives across sessions and compactions. These instructions are injected by dsh-gentle-engram, the DeepSeek Harness memory provider. Use the memory tools named in this section as the authoritative memory contract; do not infer alternative tool names from other integrations.
 
@@ -62,7 +62,3 @@ If memory tools report an ambiguous project, the working directory contains more
 
 When outcome-specific compaction recovery guidance is present, follow it. If a compacted summary appears without that guidance, save it immediately with \`mem_session_summary\`, then call \`mem_context\` before continuing.`
 
-/** The static protocol text contributed to every assembly. */
-export function protocolText(): string {
-  return PROTOCOL_TEXT
-}
