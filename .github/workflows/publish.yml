@@ -4,6 +4,13 @@ on:
   release:
     types:
       - published
+  # A release created with GITHUB_TOKEN does not trigger workflows, so a release
+  # that release-please created has to be published by hand.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to publish
+        required: true
 
 permissions:
   contents: read
@@ -16,7 +23,7 @@ jobs:
       - name: Check out released tag
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
 
       - name: Set up pnpm
         uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
