@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/ForeverYoungPp/dsh-gentle-engram/compare/v0.3.0...v0.3.1) (2026-09-21)
+
+
+### Bug Fixes
+
+* **changelog:** correct the 0.3.0 entry, which repeated commits 0.2.0 already shipped ([c27199d](https://github.com/ForeverYoungPp/dsh-gentle-engram/commit/c27199d616cc71ab7a986a14815e5c5bcf5fb47c))
+
 ## [0.3.0](https://github.com/ForeverYoungPp/dsh-gentle-engram/compare/v0.2.0...v0.3.0) (2026-09-21)
 
 **Tagged and released, but never published to npm**: 0.3.1 is the first release that reached the
