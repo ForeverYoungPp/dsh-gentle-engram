@@ -106,22 +106,6 @@ export async function archiveCompaction(
   }
 }
 
-/** Ask Engram for session-scoped recovery guidance. */
-export async function loadCompactionContext(
-  client: EngramClient,
-  state: SessionState,
-): Promise<string | undefined> {
-  try {
-    const response = await client.request<{ context?: unknown }>(
-      `/context/compaction?session_id=${encodeURIComponent(state.engramSessionId)}`,
-    )
-    const context = response?.context
-    return typeof context === 'string' && context.trim().length > 0 ? context.trim() : undefined
-  } catch {
-    return undefined
-  }
-}
-
 function manualFallback(project: string): string {
   return 'CRITICAL INSTRUCTION FOR COMPACTED SUMMARY:\n'
     + 'The agent has access to Engram persistent memory through the mem_* tools.\n'

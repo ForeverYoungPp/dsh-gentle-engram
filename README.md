@@ -17,7 +17,6 @@ tool surface itself, and attaches the calling session's identity to every operat
 | Capability | How |
 | --- | --- |
 | Resolve the project from **this session's** directory | `GET /project/current?cwd=` with the session's own working directory, so the answer belongs to that session rather than to a shared child process |
-| Session-scoped compaction recovery | `GET /context/compaction?session_id=` returns the guidance belonging to the session that was compacted |
 | A tool surface that travels with the package | the `mem_*` tools are registered through `ctx.tools.register`, so their schemas, output shape and error handling are defined and tested in this repository |
 
 ### The memory flow
@@ -67,7 +66,7 @@ Set on the inserted row in your profile (or the host patch layer):
       name: '@ian_p/dsh-gentle-engram'
       config:
         binary: engram          # Engram executable used to spawn serve
-        contextLimit: 8000      # characters of recovered context injected per session
+        contextLimit: 9000      # characters of recovered context injected per session
         captureToolResults: true
         capturePrompts: true
 ```

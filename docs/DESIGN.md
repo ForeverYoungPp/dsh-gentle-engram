@@ -12,16 +12,15 @@ is knowingly left undone.
 
 ## 1. Why 0.2.0 exists
 
-Version 0.1.x bridged Engram's MCP server. Three capabilities this plugin needs
+Version 0.1.x bridged Engram's MCP server. Two capabilities this plugin needs
 are structurally absent from that surface:
 
 | Capability | Why MCP cannot provide it |
 | --- | --- |
 | Resolve a project from the session's working directory | The MCP project lookup reads the MCP child process's own working directory and accepts no `cwd` argument. DSH is a multi-session host, so that answer belongs to the wrong session. |
-| Session-scoped compaction recovery context | The HTTP route has no MCP equivalent. |
 | Detect project ambiguity for a given directory | The HTTP route takes a `cwd`; the MCP surface does not. |
 
-A fourth point is a correction rather than a reason. The Pi adapter sets
+A third point is a correction rather than a reason. The Pi adapter sets
 `directTools: false`, which reads like "the upstream deliberately disabled MCP".
 It is that adapter's default, and it means *proxy only* — the MCP tools stay
 reachable through a single proxy tool. So going HTTP-native is this project's
@@ -97,8 +96,8 @@ to — that one is a safety property, not a preference.
 
 ## 6. Verification status
 
-Exercised end to end: real compaction recovery, binding across a restart, hot
-reload, read/write round trip, prompt and passive capture, lazy registration,
+Exercised end to end: real compaction archiving and its four-way outcome
+guidance, binding across a restart, hot reload, read/write round trip, prompt
 end-then-rotate, the close on disposal, a cold start that spawns its own server,
 and the three `timers/promises` sleeps on their real call paths.
 

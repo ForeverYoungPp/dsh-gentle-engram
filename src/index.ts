@@ -4,8 +4,8 @@
  * The plugin talks to an `engram serve` HTTP endpoint rather than bridging
  * Engram's MCP server. That is a deliberate architectural choice: only the HTTP
  * API can resolve a project from *this session's* working directory
- * (`GET /project/current?cwd=`) and return session-scoped compaction recovery
- * context (`GET /context/compaction?session_id=`). See docs/DESIGN.md.
+ * (`GET /project/current?cwd=`) and report whether that directory is ambiguous
+ * rather than guessing a project for it. See docs/DESIGN.md.
  *
  * @module dsh-gentle-engram
  */
@@ -19,7 +19,6 @@ import {
   archiveSummary,
   blocksToText,
   buildRecoveryNotice,
-  loadCompactionContext,
   warnCapture,
 } from './capture.ts'
 import { createClient, type Logger } from './engram/client.ts'
@@ -189,7 +188,10 @@ export function apply(ctx: PluginContext, rawConfig?: RawEngramConfig): void {
         return
       }
 
-      const context = await client.bestEffort(`/context?project=${encodeURIComponent(resolution.project)}`)
+      // `sessions=-1` drops Engram's five-slot recent-sessions block: those rows
+      // are bookkeeping rather than memory, and they spend the same budget as the
+      // observations below.
+      const context = await client.bestEffort(`/context?project=${encodeURIComponent(resolution.project)}&sessions=-1`)
       state.contextText = boundContext(contextTextOf(context), config.contextLimit)
     })().finally(() => {
       state.startup = undefined
@@ -325,11 +327,15 @@ export function apply(ctx: PluginContext, rawConfig?: RawEngramConfig): void {
       // summary lands in a live session — safe from inside the queue because
       // registration never enqueues.
       if (!state.registered) await ensureRegistered(state)
-      const result = await archiveCompaction(client, state, project, summary)
-      const context = await loadCompactionContext(client, state)
-      return { result, context }
+      return archiveCompaction(client, state, project, summary)
     })
-    state.pendingNotice = buildRecoveryNotice(project, boundContext(outcome.context, config.contextLimit), outcome.result)
+    // The notice carries the archive outcome and nothing else. Engram can also
+    // hand back this session's own recovery context (`GET /context/compaction`),
+    // which used to be injected here: it re-listed the observations and prompts
+    // this session had just produced — up to ~10 KB — content the standing
+    // project block already carries. The summary is still archived above, so not
+    // reading it back loses nothing.
+    state.pendingNotice = buildRecoveryNotice(project, undefined, outcome)
   }
 
   ctx.on('agent/session-start', ((payload: { agent: SessionAgent }) => {

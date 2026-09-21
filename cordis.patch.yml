@@ -2,15 +2,15 @@
 #
 # This bundle owns both the lifecycle plugin and the native mem_* tool surface.
 # It deliberately does NOT insert an @deepseek-ai/dsh-mcp-client row: Engram's
-# MCP server cannot resolve a project from a session's working directory, and
-# it exposes no session-scoped compaction context, so the HTTP path is the only
-# one that can be correct here. Adding a second Engram MCP row elsewhere in the
-# same scope would also fail the profile at load (duplicate serverName).
+# MCP server cannot resolve a project from a session's working directory, so the
+# HTTP path is the only one that can be correct here. Adding a second Engram MCP
+# row elsewhere in the same scope would also fail the profile at load
+# (duplicate serverName).
 - insert:
     - id: engram-memory
       name: '@ian_p/dsh-gentle-engram'
       config:
         binary: engram
-        contextLimit: 8000
+        contextLimit: 9000
         captureToolResults: true
         capturePrompts: true

@@ -47,7 +47,7 @@ export const DEFAULT_CONFIG: EngramConfig = {
   binary: 'engram',
   url: undefined,
   port: 7437,
-  contextLimit: 8000,
+  contextLimit: 9000,
   captureToolResults: true,
   capturePrompts: true,
   requestTimeoutMs: 3000,
