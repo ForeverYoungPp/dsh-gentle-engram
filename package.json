@@ -1,5 +1,5 @@
 {
-  "name": "dsh-gentle-engram",
+  "name": "@ian_p/dsh-gentle-engram",
   "version": "0.2.0",
   "type": "module",
   "packageManager": "pnpm@10.15.0",
@@ -12,12 +12,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/eehcx/dsh-gentle-engram.git"
+    "url": "git+https://github.com/ForeverYoungPp/dsh-gentle-engram.git"
   },
   "bugs": {
-    "url": "https://github.com/eehcx/dsh-gentle-engram/issues"
+    "url": "https://github.com/ForeverYoungPp/dsh-gentle-engram/issues"
   },
-  "homepage": "https://github.com/eehcx/dsh-gentle-engram#readme",
+  "homepage": "https://github.com/ForeverYoungPp/dsh-gentle-engram#readme",
   "files": [
     "dist",
     "cordis.patch.yml",

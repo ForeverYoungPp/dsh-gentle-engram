@@ -28,7 +28,7 @@ The upstream Pi adapter reached the same conclusion and ships its MCP row with
 ## Installation
 
 ```bash
-dsh plugin --profile web add dsh-gentle-engram
+dsh plugin --profile web add @ian_p/dsh-gentle-engram
 ```
 
 Restart DeepSeek Harness afterwards. The package is a Host bundle: its
@@ -44,7 +44,7 @@ Set on the inserted row in your profile (or the host patch layer):
 ```yaml
 - insert:
     - id: engram-memory
-      name: dsh-gentle-engram
+      name: '@ian_p/dsh-gentle-engram'
       config:
         binary: engram          # Engram executable used to spawn serve
         contextLimit: 8000      # characters of recovered context injected per session

@@ -5,7 +5,7 @@ reports, documentation updates, and focused feature proposals are welcome.
 
 ## Before you start
 
-- Check the existing [issues](https://github.com/eehcx/dsh-gentle-engram/issues)
+- Check the existing [issues](https://github.com/ForeverYoungPp/dsh-gentle-engram/issues)
 and pull requests to avoid duplicate work.
 - For larger changes, open an issue first so the approach can be discussed.
 - Never include secrets, personal Engram data, local database files, or
@@ -23,7 +23,7 @@ required for typechecking and building the package.
 Clone the repository and install dependencies:
 
 ```bash
-git clone https://github.com/eehcx/dsh-gentle-engram.git
+git clone https://github.com/ForeverYoungPp/dsh-gentle-engram.git
 cd dsh-gentle-engram
 pnpm install
 ```
