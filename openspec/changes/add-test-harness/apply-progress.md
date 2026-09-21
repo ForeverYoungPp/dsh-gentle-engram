@@ -1,6 +1,6 @@
 # Apply Progress — add-test-harness
 
-Status: in progress — work units 1–2 of 3 complete; work unit 3 pending.
+Status: complete — all three work units committed; task 4.1 (CI rung-0 evidence) deferred pending push; verification optional per native status.
 Change: `add-test-harness`
 Store: openspec — `openspec/changes/add-test-harness/apply-progress.md`
 Spec: `openspec/changes/add-test-harness/specs/testing/spec.md`
@@ -496,11 +496,188 @@ design's explicit staging list, disclosed in full in the work-unit-3 section) so
 mandatory persisted-checkbox contract and the required end state (`git status --short` exactly
 `?? .pi/`) hold.
 
+## Work unit 3 — strict-TDD flip (last)
+
+Tasks completed in this unit: 3.1, 3.2, 3.3, 3.4, 3.5 (3.5 results below; checkbox persisted
+via the disclosed end-state amend). Commit: work-unit commit 3
+("chore(openspec): enable strict TDD now that the harness is green"), created last — after the
+harness was green. Commit 3's own SHA is deliberately not written into this tracked file: a
+commit cannot record its own id; the three SHAs are in the apply/delivery report and
+re-derivable read-only via `git log` / `git show`.
+
+Files changed by this unit:
+- `openspec/config.yaml` — strict-TDD switch, test commands, runner/layers/unit command, context refresh.
+- this `apply-progress.md` (re-staged).
+- `tasks.md` (checkbox updates, see the staging note below).
+
+`openspec/config.yaml` was untracked before this change (a new planning-home config), so
+`git diff` cannot display it; commit 3 adds it as a new file. Before/after is therefore given
+as the target-state table plus the full final file below.
+
+### Field-by-field target state (task 3.1)
+
+| Field | Before | After |
+|-------|--------|-------|
+| `strict_tdd` | `false` | `true` |
+| `context` line "No reliable test runner was detected; verify testing manually before enabling strict TDD." | present | replaced by "Unit tests run on the Node built-in `node:test` runner via `pnpm test` (no dependencies)." |
+| `context` line "Unit tests: none." | present | replaced by "Unit tests: `node:test` via `pnpm test`, colocated at `src/**/*.test.ts`; stdlib-only." |
+| `context` first 3 lines (project, markers, package managers) and "Integration tests: none." / "E2E tests: none." | — | unchanged |
+| `rules.apply.test_command` | `""` | `"pnpm test"` |
+| `rules.verify.test_command` | `""` | `"pnpm test"` |
+| `testing.runner.command` | `""` | `"pnpm test"` |
+| `testing.runner.framework` | `""` | `"node:test"` (literal stdlib name) |
+| `testing.layers.unit` | `""` | `"node:test"` |
+| `testing.commands.unit` | `[]` | one entry: `scope: "."`, `command: "pnpm test"`, `framework: "node:test"` |
+| `testing.detected` | `"2026-09-21"` | unchanged — already the landing date (today is 2026-09-21) |
+| `testing.coverage`, `testing.layers.integration`/`e2e`, `testing.commands.integration`/`e2e`, `quality.lint`, `quality.lint_commands`, `quality.format`, `quality.format_commands` | empty | stay empty |
+| `quality.typecheck`, `quality.typecheck_commands`, `rules.proposal`/`spec`/`design`/`tasks` | — | unchanged |
+
+Machine check of the edited file (`python3` + `yaml.safe_load`): `strict_tdd=true`,
+apply/verify `pnpm test`, runner `{command: pnpm test, framework: node:test}`, layers.unit
+`node:test`, commands.unit exactly one entry, and `coverage`/`lint`/`lint_commands`/`format`/
+`format_commands`/`e2e` all empty. The file parses as YAML.
+
+Note on the advisory `yamllint` run (not a repo gate, and already failing before this change
+on the missing `---` document start and an over-length pre-existing context line): the two new
+context lines follow the same single-line style as the surrounding block.
+
+### Final `openspec/config.yaml` (task 3.1/3.2)
+
+```yaml
+strict_tdd: true
+context: |
+  dsh-gentle-engram is a Node.js/TypeScript ESM project.
+  Detected markers: package.json, tsconfig.json, pnpm package manager, GitHub Actions.
+  Package managers: pnpm.
+  Unit tests run on the Node built-in `node:test` runner via `pnpm test` (no dependencies).
+  Unit tests: `node:test` via `pnpm test`, colocated at `src/**/*.test.ts`; stdlib-only.
+  Integration tests: none.
+  E2E tests: none.
+rules:
+  proposal:
+    require_problem_statement: true
+  spec:
+    require_acceptance_criteria: true
+  design:
+    require_tradeoffs: true
+  tasks:
+    protect_review_workload: true
+  apply:
+    test_command: "pnpm test"
+  verify:
+    test_command: "pnpm test"
+testing:
+  detected: "2026-09-21"
+  runner:
+    command: "pnpm test"
+    framework: "node:test"
+  layers:
+    unit: "node:test"
+    integration: ""
+    e2e: ""
+  commands:
+    unit:
+      - scope: "."
+        command: "pnpm test"
+        framework: "node:test"
+    integration:
+      []
+    e2e:
+      []
+  coverage:
+    command: ""
+    commands:
+      []
+quality:
+  lint: ""
+  lint_commands:
+    []
+  typecheck: "pnpm run typecheck"
+  typecheck_commands:
+    - scope: "."
+      command: "pnpm run typecheck"
+      framework: "type checker"
+  format: ""
+  format_commands:
+    []
+```
+
+### Context refresh (task 3.2)
+
+Before:
+
+```text
+  No reliable test runner was detected; verify testing manually before enabling strict TDD.
+  Unit tests: none.
+```
+
+After:
+
+```text
+  Unit tests run on the Node built-in `node:test` runner via `pnpm test` (no dependencies).
+  Unit tests: `node:test` via `pnpm test`, colocated at `src/**/*.test.ts`; stdlib-only.
+```
+
+The project/markers/package-manager lines and the integration/E2E lines are byte-identical to
+the before state.
+
+### Bootstrap-exception record (for `sdd-verify`)
+
+- Harness commit: work-unit commit 1 (`ec11052`) contains `"test": "node --test"` and
+  `src/redaction.test.ts`, both green before the flip.
+- Flip commit: work-unit commit 3, the last work-unit commit, is the first commit that sets
+  `strict_tdd: true` and it already contains commit 1's script and pilot test in its ancestry
+  (exactly what the spec's bootstrap-ordering scenario inspects read-only).
+- CI contingency-ladder amendments: none occurred. No rung-1 amendment (explicit test path) and
+  no rung-2 CI Node bump were needed or executed. If one becomes necessary after the branch is
+  pushed, its consent and wording must be recorded verbatim here (rung 1 is pre-authorized but
+  amends the spec text in the same change; rung 2 requires explicit user consent under
+  `ask-on-risk` and a pause).
+
+### Staging note and end-state amend (deviation, disclosed)
+
+The design's explicit staging lists for commits 2 and 3 do not include `tasks.md`, but the
+mandatory persisted-checkbox contract (every completed task visibly `- [x]`) and the required
+end state (`git status --short` prints exactly `?? .pi/`, per task 3.5) can only both hold if
+the checkbox updates are committed with their work unit. Therefore `tasks.md` was additionally
+staged in commits 2 and 3. Commit 3 was then amended once
+(`git commit --amend --no-edit`) to add the 3.5 checkbox and the observed 3.5 results after the
+read-only checks passed; the commit message, staging scope, and last-commit position are
+unchanged, and nothing was pushed. This is the only deviation from the design's commit plan.
+
+### 3.5 post-commit end-state checks (read-only)
+
+Observed passing on the final work-unit commit and re-run after the end-state amend. Commit 3's
+own SHA is deliberately not recorded here (a commit cannot record its own id); the full
+`git log --oneline -3` transcript with the final SHAs is in the apply/delivery report.
+
+- `git log --oneline -3` — three messages, newest-first, exactly the design's order:
+  `chore(openspec): enable strict TDD now that the harness is green` /
+  `ci: gate checks on pnpm test and document the test contract` /
+  `test: add Node stdlib test harness with pilot redaction test`.
+- `git status --short` — exactly one line:
+
+```text
+?? .pi/
+```
+
+- `git show <commit-3>:package.json` — line 51 contains `"test": "node --test",` (script
+  already present in the strict-TDD-flip commit's tree).
+- `git show <commit-3>:src/redaction.test.ts` — blob present and starts:
+
+```text
+import assert from 'node:assert/strict'
+import { test } from 'node:test'
+```
+
+- `git show <commit-2>:.github/workflows/ci.yml` (commit 2 =
+  `e688f69e9e06cc12332d04e807effe6ecef7d477`) — contains the `Test` step:
+
+```text
+37:      - name: Test
+38-        run: pnpm test
+```
+
 ## Remaining tasks
 
-- [ ] 3.1 `openspec/config.yaml` strict-TDD target state
-- [ ] 3.2 `openspec/config.yaml` context refresh
-- [ ] 3.3 append work-unit-3 evidence here
-- [ ] 3.4 commit work unit 3 (last)
-- [ ] 3.5 post-commit read-only end-state verification (reported, not appended — a commit cannot record its own SHA; the read-only checks themselves are written into the final report)
 - [ ] 4.1 deferred: CI rung-0 evidence requires the branch to be pushed (human decision); no push was performed. When pushed, record workflow run URL/id, commit SHA, `Test` step conclusion, and a log excerpt naming `src/redaction.test.ts` with pass counts in the change report and PR body; if the step fails on Node 22, walk the design's contingency ladder in order (rung 1 explicit-path script pre-authorized, spec amended in the same change and noted here; rung 2 CI Node bump pauses for explicit user consent under ask-on-risk; otherwise stop and report blocked). `engines.node: ">=22.18"` unchanged at every rung.

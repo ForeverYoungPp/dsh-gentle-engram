@@ -1,0 +1,56 @@
+strict_tdd: true
+context: |
+  dsh-gentle-engram is a Node.js/TypeScript ESM project.
+  Detected markers: package.json, tsconfig.json, pnpm package manager, GitHub Actions.
+  Package managers: pnpm.
+  Unit tests run on the Node built-in `node:test` runner via `pnpm test` (no dependencies).
+  Unit tests: `node:test` via `pnpm test`, colocated at `src/**/*.test.ts`; stdlib-only.
+  Integration tests: none.
+  E2E tests: none.
+rules:
+  proposal:
+    require_problem_statement: true
+  spec:
+    require_acceptance_criteria: true
+  design:
+    require_tradeoffs: true
+  tasks:
+    protect_review_workload: true
+  apply:
+    test_command: "pnpm test"
+  verify:
+    test_command: "pnpm test"
+testing:
+  detected: "2026-09-21"
+  runner:
+    command: "pnpm test"
+    framework: "node:test"
+  layers:
+    unit: "node:test"
+    integration: ""
+    e2e: ""
+  commands:
+    unit:
+      - scope: "."
+        command: "pnpm test"
+        framework: "node:test"
+    integration:
+      []
+    e2e:
+      []
+  coverage:
+    command: ""
+    commands:
+      []
+quality:
+  lint: ""
+  lint_commands:
+    []
+  typecheck: "pnpm run typecheck"
+  typecheck_commands:
+    - scope: "."
+      command: "pnpm run typecheck"
+      framework: "type checker"
+  format: ""
+  format_commands:
+    []
