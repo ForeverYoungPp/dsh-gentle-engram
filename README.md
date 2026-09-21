@@ -9,17 +9,26 @@ learnings, and keeps a session's memory alive across compactions.
 This is a **0.2.0 rewrite**. Version 0.1.x bridged Engram's MCP server; that approach could
 not be made correct, for reasons recorded in [DESIGN.md](./docs/DESIGN.md).
 
-## Why HTTP instead of MCP
+## How it works
 
-Engram's MCP surface is missing exactly the two capabilities a multi-session host needs:
+The plugin talks to `engram serve` over HTTP and inserts **no MCP row**: it owns the `mem_*`
+tool surface itself, and attaches the calling session's identity to every operation.
 
-| Capability | Why MCP cannot provide it |
+| Capability | How |
 | --- | --- |
-| Resolve the project from **this session's** directory | `mem_current_project` uses the MCP child process's `os.Getwd()` - the harness launch directory, not the session directory |
-| Session-scoped compaction recovery context | `GET /context/compaction?session_id=` has no MCP equivalent |
+| Resolve the project from **this session's** directory | `GET /project/current?cwd=` with the session's own working directory, so the answer belongs to that session rather than to a shared child process |
+| Session-scoped compaction recovery | `GET /context/compaction?session_id=` returns the guidance belonging to the session that was compacted |
+| A tool surface that travels with the package | the `mem_*` tools are registered through `ctx.tools.register`, so their schemas, output shape and error handling are defined and tested in this repository |
 
-The upstream Pi adapter reached the same conclusion and ships its MCP row with
-`directTools: false`. This bundle therefore inserts **no MCP row at all**.
+### The memory flow
+
+```text
+session start   resolve the project, then fetch the project context     (nothing is written)
+first write     create the Engram session row, then attribute the write to it
+every turn      capture the user prompt, and any tool result carrying a Key Learnings section
+compaction      archive the summary, then inject outcome-specific recovery guidance
+disposal        close the session row, best-effort and without a summary
+```
 
 ## Requirements
 
