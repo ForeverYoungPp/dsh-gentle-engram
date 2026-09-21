@@ -678,6 +678,44 @@ import { test } from 'node:test'
 38-        run: pnpm test
 ```
 
+## Post-push: CI rung-0 evidence (task 4.1)
+
+The branches were pushed at the human's explicit direction, per this repository's own convention
+(`CONTRIBUTING.md`: "Push changes to `main`; Release Please opens or updates a release PR"). No pull
+request was opened, so task 4.1's "PR body" locator has no target; the evidence lives here and in
+the delivery report.
+
+| Field | Observed |
+| --- | --- |
+| Workflow run | `CI`, id `35620396901`, event `push`, branch `main`, commit `6520200`, conclusion **success** |
+| URL | `https://github.com/ForeverYoungPp/dsh-gentle-engram/actions/runs/35620396901` |
+| Node version | `22` (from the `Set up Node.js` step log) |
+| `checks` steps | 7 `Typecheck` success → 8 **`Test` success** → 9 `Build` success |
+| `Test` step log | `> node --test` → `TAP version 13` → `# tests 6` / `# suites 0` / `# pass 6` / `# fail 0` |
+
+**Discovery evidence, stated precisely.** The run log does **not** contain the string
+`src/redaction.test.ts` (`grep -c` over the full 322-line log returns `0`). Node 22's TAP reporter
+omits the test file path on an all-green single-file run. The discovery conclusion is still
+established because the log records all six test names, and those names exist only in
+`src/redaction.test.ts` while the repository contains no other test file — so `# tests 6` /
+`# pass 6` / `# fail 0` can only come from Node 22 discovering and executing that colocated `.ts`
+file under the default discovery rule. This replaces the design's "the step log names
+`src/redaction.test.ts`" expectation, which is not literally satisfiable on Node 22.
+
+**Ladder outcome: rung 0 discharged.** No rung-1 amendment (explicit test path) and no rung-2
+consent (CI Node bump) were needed or executed. `engines.node: ">=22.18"` is unchanged, and no
+`continue-on-error`, `|| true`, `Test`-step removal, or `skip` was introduced at any rung.
+
+**Separate, non-blocking observation (not this change).** The same push triggered `Release Please`
+which failed with `GitHub Actions is not permitted to create or approve pull requests` — a
+repository setting under Settings → Actions → General. That run also logged `updating from 0.2.0
+to 1.0.0`, an unexpected bump for a single `feat:` commit, and left the branch
+`release-please--branches--main--components--dsh-gentle-engram` at `d7819a9`. Neither is caused by
+this change and neither affects its acceptance criteria.
+
+The identity of the fourth, evidence-only commit is recorded in the delivery report rather than
+here: a commit cannot record its own SHA.
+
 ## Remaining tasks
 
-- [ ] 4.1 deferred: CI rung-0 evidence requires the branch to be pushed (human decision); no push was performed. When pushed, record workflow run URL/id, commit SHA, `Test` step conclusion, and a log excerpt naming `src/redaction.test.ts` with pass counts in the change report and PR body; if the step fails on Node 22, walk the design's contingency ladder in order (rung 1 explicit-path script pre-authorized, spec amended in the same change and noted here; rung 2 CI Node bump pauses for explicit user consent under ask-on-risk; otherwise stop and report blocked). `engines.node: ">=22.18"` unchanged at every rung.
+None. 20 of 20 tasks are complete.
