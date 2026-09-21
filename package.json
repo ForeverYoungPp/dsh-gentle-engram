@@ -22,7 +22,7 @@
     "dist",
     "cordis.patch.yml",
     "README.md",
-    "DESIGN.md",
+    "docs/DESIGN.md",
     "LICENSE"
   ],
   "exports": {

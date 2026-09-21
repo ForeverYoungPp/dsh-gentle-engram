@@ -5,7 +5,7 @@
  * Engram's MCP server. That is a deliberate architectural choice: only the HTTP
  * API can resolve a project from *this session's* working directory
  * (`GET /project/current?cwd=`) and return session-scoped compaction recovery
- * context (`GET /context/compaction?session_id=`). See DESIGN.md.
+ * context (`GET /context/compaction?session_id=`). See docs/DESIGN.md.
  *
  * @module dsh-gentle-engram
  */

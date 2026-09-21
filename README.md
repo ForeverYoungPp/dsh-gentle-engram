@@ -7,7 +7,7 @@ DeepSeek Harness. The plugin registers native `mem_*` tools, captures prompts an
 learnings, and keeps a session's memory alive across compactions.
 
 This is a **0.2.0 rewrite**. Version 0.1.x bridged Engram's MCP server; that approach could
-not be made correct, for reasons recorded in [DESIGN.md](./DESIGN.md).
+not be made correct, for reasons recorded in [DESIGN.md](./docs/DESIGN.md).
 
 ## Why HTTP instead of MCP
 
@@ -29,8 +29,17 @@ The upstream Pi adapter reached the same conclusion and ships its MCP row with
 
 ## Installation
 
+The published package:
+
 ```bash
 dsh plugin --profile web add @ian_p/dsh-gentle-engram
+```
+
+Or a local checkout, which links `node_modules` to your working tree so a rebuild takes
+effect without reinstalling:
+
+```bash
+dsh plugin --profile web add /path/to/dsh-gentle-engram
 ```
 
 Restart DeepSeek Harness afterwards. The package is a Host bundle: its
@@ -155,9 +164,8 @@ pnpm run typecheck
 pnpm run build
 ```
 
-Install the plugin **by directory** so `node_modules` links to this checkout
-(`dsh plugin --profile web add /path/to/dsh-gentle-engram`); a tarball install
-would need a reinstall on every change.
+For development, install by directory (see [Installation](#installation)) so `node_modules`
+links to your working tree; the published package would need a reinstall on every change.
 
 ### Live reload
 
