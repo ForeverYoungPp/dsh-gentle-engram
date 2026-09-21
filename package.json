@@ -23,7 +23,6 @@
     "cordis.patch.yml",
     "README.md",
     "DESIGN.md",
-    "PI-PORT.md",
     "LICENSE"
   ],
   "exports": {
@@ -47,6 +46,7 @@
   ],
   "scripts": {
     "build": "tsdown",
+    "prepare": "tsdown",
     "typecheck": "tsc -p tsconfig.json",
     "test": "node --test",
     "prepublishOnly": "pnpm run typecheck && pnpm run build"
