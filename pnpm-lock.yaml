@@ -29,6 +29,9 @@ importers:
       '@deepseek-ai/dsh-tools':
         specifier: ^0.1.5-rc.2
         version: 0.1.5-rc.2(7f9e302786cf21e030eafe960666842c)
+      '@deepseek-ai/dsh-util-values':
+        specifier: 0.1.5-rc.2
+        version: 0.1.5-rc.2(@deepseek-ai/cordis@4.0.2)
       '@types/node':
         specifier: ^22.20.1
         version: 22.20.4

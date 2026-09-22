@@ -16,6 +16,7 @@
 
 import { setTimeout as sleep } from 'node:timers/promises'
 import type { EngramConfig } from '../config.ts'
+import { losslessJson } from '../json.ts'
 import { redactUrlPath, redactValue } from '../redaction.ts'
 import {
   EngramHttpError,
@@ -121,7 +122,11 @@ export function createClient(config: EngramConfig, logger: Logger): EngramClient
     }
   }
 
-  /** Decode a completed response, preserving a JSON `null` as success. */
+  /**
+   * Decode a completed response, preserving a JSON `null` as success. The
+   * payload is normalized to lossless JSON before it can become a tool result;
+   * the host rejects `-0` and would fail the whole tool call.
+   */
   async function decode<T>(response: Response): Promise<T | null> {
     let data: unknown = null
     if (response.status !== 204) {
@@ -136,7 +141,7 @@ export function createClient(config: EngramConfig, logger: Logger): EngramClient
       const detail = typeof record?.error === 'string' ? record.error : `Engram request failed with HTTP ${response.status}`
       throw new EngramHttpError(detail, response.status, data)
     }
-    return data as T | null
+    return losslessJson(data) as T | null
   }
 
   async function requestResult<T>(path: string, options: FetchOptions = {}): Promise<EngramFetchResult<T>> {
