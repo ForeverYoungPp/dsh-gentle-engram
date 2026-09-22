@@ -100,7 +100,7 @@ export function createServerManager(config: EngramConfig, client: EngramClient, 
    */
   function localInstanceIdWithin(deadline: number): string {
     if (localInstanceId !== undefined) return localInstanceId
-    const timeoutMs = Math.max(1, Math.min(config.startupTimeoutMs, deadline - Date.now()))
+    const timeoutMs = Math.max(1, deadline - Date.now())
     const result = spawnSync(config.binary, ['instance-id'], {
       encoding: 'utf8',
       timeout: timeoutMs,

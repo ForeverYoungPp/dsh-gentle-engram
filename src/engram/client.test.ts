@@ -13,6 +13,9 @@ import { createClient, type EngramClient } from './client.ts'
 
 const logger = { info() {}, warn() {} }
 
+/** A well-formed 32-hex instance id. The transport cases below are decided before it is compared. */
+const EXPECTED_INSTANCE_ID = '0123456789abcdef0123456789abcdef'
+
 /** Install a fetch that always rejects with Node's timeout error. */
 function stubTimedOutFetch(): { calls: () => number; restore: () => void } {
   const original = globalThis.fetch
@@ -269,7 +272,7 @@ test('a private query value reaches fetch redacted while the URL shape is preser
 test('probeHealth maps a non-ok response to indeterminate', async () => {
   const stub = stubFetch(() => new Response('down', { status: 503 }))
   try {
-    assert.equal(await client().probeHealth(), 'indeterminate')
+    assert.equal(await client().probeHealth(EXPECTED_INSTANCE_ID), 'indeterminate')
   } finally {
     stub.restore()
   }
@@ -278,7 +281,7 @@ test('probeHealth maps a non-ok response to indeterminate', async () => {
 test('probeHealth maps a timeout to indeterminate', async () => {
   const stub = stubTimedOutFetch()
   try {
-    assert.equal(await client().probeHealth(), 'indeterminate')
+    assert.equal(await client().probeHealth(EXPECTED_INSTANCE_ID), 'indeterminate')
   } finally {
     stub.restore()
   }
@@ -287,7 +290,7 @@ test('probeHealth maps a timeout to indeterminate', async () => {
 test('probeHealth maps a refused connection to refused', async () => {
   const stub = stubFetch(() => { throw refusedError() })
   try {
-    assert.equal(await client().probeHealth(), 'refused')
+    assert.equal(await client().probeHealth(EXPECTED_INSTANCE_ID), 'refused')
   } finally {
     stub.restore()
   }
@@ -296,7 +299,7 @@ test('probeHealth maps a refused connection to refused', async () => {
 test('probeHealth maps an unrecognized transport failure to indeterminate', async () => {
   const stub = stubFetch(() => { throw new Error('getaddrinfo ENOTFOUND engram.invalid') })
   try {
-    assert.equal(await client().probeHealth(), 'indeterminate')
+    assert.equal(await client().probeHealth(EXPECTED_INSTANCE_ID), 'indeterminate')
   } finally {
     stub.restore()
   }

@@ -116,11 +116,10 @@ export async function resolveProject(client: EngramClient, cwd: string): Promise
     return { kind: 'failed', reason: 'this session did not report a working directory', available: [] }
   }
   const query = `?cwd=${encodeURIComponent(cwd)}`
-  let envelope: ProjectEnvelope | undefined
-  for (let attempt = 1; attempt <= PROJECT_DETECTION_ATTEMPTS; attempt += 1) {
+  let envelope: ProjectEnvelope
+  for (let attempt = 1; ; attempt += 1) {
     try {
       envelope = await client.request<ProjectEnvelope>(`/project/current${query}`) ?? {}
-      break
     } catch (error: unknown) {
       // An older server without the route: degrade to the nearest repo config,
       // exactly as upstream does, rather than failing closed on version skew.
@@ -137,22 +136,18 @@ export async function resolveProject(client: EngramClient, cwd: string): Promise
         return { kind: 'failed', reason: detail, available: [] }
       }
       await sleep(PROJECT_DETECTION_RETRY_MS, undefined, { ref: false })
+      continue
     }
-  }
-  if (envelope === undefined) {
-    // Unreachable: the loop returns on the final failed attempt. Kept so the
-    // successful-envelope type needs no assertion.
-    return { kind: 'failed', reason: 'Engram did not answer /project/current', available: [] }
-  }
 
-  const project = isSafeDetectedProject(envelope)
-  if (project !== undefined) {
-    return { kind: 'resolved', project, source: asString(envelope.project_source) ?? 'unknown' }
+    const project = isSafeDetectedProject(envelope)
+    if (project !== undefined) {
+      return { kind: 'resolved', project, source: asString(envelope.project_source) ?? 'unknown' }
+    }
+    const available = asStringList(envelope.available_projects)
+    const hint = asString(envelope.error_hint) ?? asString(envelope.warning)
+    if (hint !== undefined || asString(envelope.project) !== undefined) {
+      return { kind: 'failed', reason: hint ?? 'Engram reported an unusable project', available }
+    }
+    return { kind: 'pending', reason: 'Engram did not report a project for this directory', available }
   }
-  const available = asStringList(envelope.available_projects)
-  const hint = asString(envelope.error_hint) ?? asString(envelope.warning)
-  if (hint !== undefined || asString(envelope.project) !== undefined) {
-    return { kind: 'failed', reason: hint ?? 'Engram reported an unusable project', available }
-  }
-  return { kind: 'pending', reason: 'Engram did not report a project for this directory', available }
 }

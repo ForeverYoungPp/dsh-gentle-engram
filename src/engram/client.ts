@@ -58,11 +58,11 @@ export interface EngramClient {
   /** Background request: never throws, always logs. */
   bestEffort<T>(path: string, options?: FetchOptions): Promise<T | null>
   /**
-   * Fast reachability probe. With an expected instance id the probe also checks
-   * ownership: only a server whose `/health` `instance_id` matches is `ready`;
-   * every other answer — including a body without the field — is `foreign`.
+   * Fast reachability probe. The probe also checks ownership: only a server
+   * whose `/health` `instance_id` matches is `ready`; a mismatch, a missing
+   * field, or an unreadable body is `foreign`.
    */
-  probeHealth(expectedInstanceId?: string): Promise<EngramHealth>
+  probeHealth(expectedInstanceId: string): Promise<EngramHealth>
   /** Install the one-generation recovery hook used after a refused connection. */
   setRecovery(recovery: (() => Promise<boolean>) | undefined): void
 }
@@ -197,7 +197,7 @@ export function createClient(config: EngramConfig, logger: Logger): EngramClient
         return null
       }
     },
-    async probeHealth(expectedInstanceId?: string): Promise<EngramHealth> {
+    async probeHealth(expectedInstanceId: string): Promise<EngramHealth> {
       let response: Response
       try {
         response = await fetch(`${baseUrl}/health`, { signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS) })
@@ -207,7 +207,6 @@ export function createClient(config: EngramConfig, logger: Logger): EngramClient
         return 'indeterminate'
       }
       if (!response.ok) return 'indeterminate'
-      if (expectedInstanceId === undefined) return 'ready'
       // Strict on purpose: a body whose `instance_id` is absent or unreadable is
       // not this machine's server, so it is refused rather than tolerated.
       try {
