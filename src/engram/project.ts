@@ -12,6 +12,7 @@
 
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
+import { setTimeout as sleep } from 'node:timers/promises'
 import type { EngramClient } from './client.ts'
 import { EngramHttpError } from './errors.ts'
 
@@ -86,6 +87,12 @@ export function detectLocalConfigProject(cwd: string): { project: string; path: 
   }
 }
 
+/** Attempts for one project detection, mirroring the Pi adapter's bounded retry. */
+const PROJECT_DETECTION_ATTEMPTS = 5
+
+/** Gap between project-detection attempts. */
+const PROJECT_DETECTION_RETRY_MS = 200
+
 /** Human-actionable guidance for an unresolvable workspace. */
 export function ambiguityGuidance(available: readonly string[]): string {
   const choices = available.length > 0 ? ` Known projects: ${available.join(', ')}.` : ''
@@ -102,30 +109,45 @@ export function ambiguityGuidance(available: readonly string[]): string {
  * @param cwd - the session's absolute working directory.
  */
 export async function resolveProject(client: EngramClient, cwd: string): Promise<ProjectResolution> {
+  // `?cwd=` (and a missing `cwd`) is answered by the server from the serving
+  // process's own directory, which no session owns, so refuse here once rather
+  // than in every caller. This returns before any HTTP request is issued.
+  if (cwd.trim().length === 0) {
+    return { kind: 'failed', reason: 'this session did not report a working directory', available: [] }
+  }
   const query = `?cwd=${encodeURIComponent(cwd)}`
   let envelope: ProjectEnvelope
-  try {
-    envelope = await client.request<ProjectEnvelope>(`/project/current${query}`) ?? {}
-  } catch (error: unknown) {
-    // An older server without the route: degrade to the nearest repo config,
-    // exactly as upstream does, rather than failing closed on version skew.
-    if (error instanceof EngramHttpError && error.status === 404) {
-      const local = detectLocalConfigProject(cwd)
-      if (local !== undefined) return { kind: 'resolved', project: local.project, source: 'config' }
-      return { kind: 'pending', reason: 'the running Engram server does not expose /project/current', available: [] }
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      envelope = await client.request<ProjectEnvelope>(`/project/current${query}`) ?? {}
+    } catch (error: unknown) {
+      // An older server without the route: degrade to the nearest repo config,
+      // exactly as upstream does, rather than failing closed on version skew.
+      if (error instanceof EngramHttpError && error.status === 404) {
+        const local = detectLocalConfigProject(cwd)
+        if (local !== undefined) return { kind: 'resolved', project: local.project, source: 'config' }
+        return { kind: 'pending', reason: 'the running Engram server does not expose /project/current', available: [] }
+      }
+      // Any other failure may be transient (a server still starting, a
+      // timeout), so it is retried a bounded number of times, mirroring the Pi
+      // adapter. The retry is read-only, so replaying it carries no write risk.
+      if (attempt === PROJECT_DETECTION_ATTEMPTS) {
+        const detail = error instanceof Error ? error.message : String(error)
+        return { kind: 'failed', reason: detail, available: [] }
+      }
+      await sleep(PROJECT_DETECTION_RETRY_MS, undefined, { ref: false })
+      continue
     }
-    const detail = error instanceof Error ? error.message : String(error)
-    return { kind: 'failed', reason: detail, available: [] }
-  }
 
-  const project = isSafeDetectedProject(envelope)
-  if (project !== undefined) {
-    return { kind: 'resolved', project, source: asString(envelope.project_source) ?? 'unknown' }
+    const project = isSafeDetectedProject(envelope)
+    if (project !== undefined) {
+      return { kind: 'resolved', project, source: asString(envelope.project_source) ?? 'unknown' }
+    }
+    const available = asStringList(envelope.available_projects)
+    const hint = asString(envelope.error_hint) ?? asString(envelope.warning)
+    if (hint !== undefined || asString(envelope.project) !== undefined) {
+      return { kind: 'failed', reason: hint ?? 'Engram reported an unusable project', available }
+    }
+    return { kind: 'pending', reason: 'Engram did not report a project for this directory', available }
   }
-  const available = asStringList(envelope.available_projects)
-  const hint = asString(envelope.error_hint) ?? asString(envelope.warning)
-  if (hint !== undefined || asString(envelope.project) !== undefined) {
-    return { kind: 'failed', reason: hint ?? 'Engram reported an unusable project', available }
-  }
-  return { kind: 'pending', reason: 'Engram did not report a project for this directory', available }
 }

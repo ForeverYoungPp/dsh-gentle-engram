@@ -15,8 +15,6 @@ export interface EngramConfig {
   readonly url: string | undefined
   /** TCP port for an implicitly owned server. */
   readonly port: number
-  /** Observation text limit for the injected context block. */
-  readonly contextLimit: number
   /** Capture non-Engram tool results as passive observations. */
   readonly captureToolResults: boolean
   /** Capture human prompts. */
@@ -34,7 +32,6 @@ export interface RawEngramConfig {
   readonly binary?: unknown
   readonly url?: unknown
   readonly port?: unknown
-  readonly contextLimit?: unknown
   readonly captureToolResults?: unknown
   readonly capturePrompts?: unknown
   readonly requestTimeoutMs?: unknown
@@ -47,7 +44,6 @@ export const DEFAULT_CONFIG: EngramConfig = {
   binary: 'engram',
   url: undefined,
   port: 7437,
-  contextLimit: 9000,
   captureToolResults: true,
   capturePrompts: true,
   requestTimeoutMs: 3000,
@@ -105,7 +101,6 @@ export function resolveConfig(raw: RawEngramConfig | undefined, warn: (message: 
     binary: envString('ENGRAM_BIN') ?? pickString(source.binary, DEFAULT_CONFIG.binary),
     url,
     port: envPort() ?? pickNumber(source.port, DEFAULT_CONFIG.port, 1, 65_535),
-    contextLimit: pickNumber(source.contextLimit, DEFAULT_CONFIG.contextLimit, 200, 200_000),
     captureToolResults: pickBoolean(source.captureToolResults, DEFAULT_CONFIG.captureToolResults),
     capturePrompts: pickBoolean(source.capturePrompts, DEFAULT_CONFIG.capturePrompts),
     requestTimeoutMs: pickNumber(source.requestTimeoutMs, DEFAULT_CONFIG.requestTimeoutMs, 100, 120_000),

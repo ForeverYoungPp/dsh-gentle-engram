@@ -1,7 +1,7 @@
 # PI-PORT — pi 插件架构解剖 & DSH 侧对照设计
 
 > 配套文档：`DESIGN.md`（DSH 侧全 HTTP 设计定稿）
-> pi 源码：`~/.pi/agent/npm/node_modules/gentle-engram@0.1.12`（= Gentleman-Programming/engram `plugin/pi`）
+> pi 源码：`~/.pi/agent/npm/node_modules/gentle-engram@0.1.14`（= Gentleman-Programming/engram `plugin/pi`）
 > 本文件回答两件事：**pi 是怎么设计的**，**我们这边逐块怎么做**。
 > 修订：经对抗式审核后修正 §4(a)/(d)、§5、§7.2、§7.4（见各节"审核修正"标记）。
 
@@ -20,15 +20,15 @@ pi 那套是「**HTTP 单一真源 + 插件自持原生工具面 + 按身份严�
 
 ## 1. pi 的整体形状
 
-一个 npm 包 `gentle-engram@0.1.12`：
+一个 npm 包 `gentle-engram@0.1.14`：
 
 | 文件 | 行数 | 职责 |
 | --- | --- | --- |
-| `index.ts` | 1377 | 扩展本体：事件接线 + HTTP 客户端 + 服务器生命周期 + 19 个原生工具 |
+| `index.ts` | 1567 | 扩展本体：事件接线 + HTTP 客户端 + 服务器生命周期 + 22 个原生工具 |
 | `compaction-recovery.js` | 106 | 压缩摘要抽取 + 4 结局恢复话术（纯函数） |
 | `private-redaction.js` | 44 | `<private>` 递归脱敏（纯函数） |
-| `memory-tool-chrome.js` | 155 | 工具调用的紧凑 UI 渲染（纯函数） |
-| `cli.js` | 137 | `pi-engram init` 安装器 |
+| `memory-tool-chrome.js` | 161 | 工具调用的紧凑 UI 渲染（纯函数） |
+| `cli.js` | 138 | `pi-engram init` 安装器 |
 
 数据流：Pi 事件 + `mem_*` 工具 → gentle-engram → `ENGRAM_URL` (`engram serve`) → SQLite。
 **持久化完全归 `engram serve` 所有**，插件自己不碰 SQLite。
@@ -39,61 +39,61 @@ pi 那套是「**HTTP 单一真源 + 插件自持原生工具面 + 按身份严�
 
 ### 2.1 服务器生命周期 —— 最值得抄的一块
 
-pi 不等外部服务，自己拉起 `engram serve`（`index.ts:460-676`）：
+pi 不等外部服务，自己拉起 `engram serve`（`index.ts:543-761`；`spawnDetached`…`recoverImplicitEngramServer`）：
 
 - `spawnDetached`：`{detached:true, stdio:'ignore'}`，`spawn` 事件后立刻 `unref()`。
 - `spawnAndWaitForEngram`：一个 `AbortController` 从**所有**终止路径取消 readiness 轮询，`settle()` 保证只跑一次。
-- **放弃的子进程要 kill，不能只 unref**（`:523-526`）："Unreffing alone only detaches it from our event loop: the process stays alive, detached, answering nothing — and because initialization is retried, every later attempt would add another one for the life of the session."
-- `waitCancellable`（`:490-508`）：可被 abort 打断的 sleep，避免被遗弃的轮询用定时器**吊住整个宿主进程**。
-- **共享启动预算**：deadline 是绝对值、传进去的，spawn 与随后的 fallback 等待共用同一个预算（`:510-511`）。
-- **只有 `ready` 才算"有服务器"**（`:593-597`）：拒绝、超时、DNS 失败、无法识别的错误形状一律视为"没有"，去拉起一个。
-- 不确定探测（`indeterminate`）时给另一个 Pi 实例一点宽限：spawn 失败后**共用剩余 deadline** 再等一次（`:598-615`）。确定被拒绝则不给宽限。
-- `sharedInitialization`（`:630-655`）：**失败的启动保持可重试，但退避窗口内的调用者立刻拿到上次的失败**——"不让一个持续不健康的 provider 按工具调用次数反复收取完整的 readiness 预算"，同时限制失败会话能 spawn 出多少子进程。
-- `recoverImplicitEngramServer`（`:657-676`）：初始化成功后若连接被拒，走**代（generation）级**的有界恢复，每个 generation 只重启一次，`recoveryFlight` 防止加入旧代。
+- **放弃的子进程要 kill，不能只 unref**（`stopAbandonedChild` 注释，`:606-609`）："Unreffing alone only detaches it from our event loop: the process stays alive, detached, answering nothing — and because initialization is retried, every later attempt would add another one for the life of the session."
+- `waitCancellable`（`:575-591`）：可被 abort 打断的 sleep，避免被遗弃的轮询用定时器**吊住整个宿主进程**。
+- **共享启动预算**：deadline 是绝对值、传进去的，spawn 与随后的 fallback 等待共用同一个预算（`waitForEngramReadiness` 上方注释，`:593-594`）。
+- **只有 `ready` 才算"有服务器"**（`initializeEngramServer` 注释，`:678-682`）：拒绝、超时、DNS 失败、无法识别的错误形状一律视为"没有"，去拉起一个。
+- 不确定探测（`indeterminate`）时给另一个 Pi 实例一点宽限：spawn 失败后**共用剩余 deadline** 再等一次（`:685-700`）。确定被拒绝则不给宽限。
+- `sharedInitialization`（`:721-740`）：**失败的启动保持可重试，但退避窗口内的调用者立刻拿到上次的失败**——"不让一个持续不健康的 provider 按工具调用次数反复收取完整的 readiness 预算"，同时限制失败会话能 spawn 出多少子进程。
+- `recoverImplicitEngramServer`（`:745-761`）：初始化成功后若连接被拒，走**代（generation）级**的有界恢复，每个 generation 只重启一次，`recoveryFlight` 防止加入旧代。
 
-### 2.2 HTTP 客户端（`index.ts:206-301`）
+### 2.2 HTTP 客户端（`index.ts:239-337`；`engramFetchResult` / `engramFetch` / `bestEffortEngramFetch`）
 
 - 超时 3s、最多 3 次尝试、退避 250ms 起。
-- **幂等感知重试**（`:125-129` `isSafeToReplay`）：只有 `GET` 和 `POST /sessions` 可重放。超时意味着请求**可能已经到达服务端**，而 `mem_save` 之类的写没有幂等键，重发就是重复写入。
+- **幂等感知重试**（`:129-133` `isSafeToReplay`）：只有 `GET` 和 `POST /sessions` 可重放。超时意味着请求**可能已经到达服务端**，而 `mem_save` 之类的写没有幂等键，重发就是重复写入。
 - 超时不重试、直接返回 `{data:null, timedOutMethod}`，让调用方知道"写可能已生效"。
-- 两种失败通道：`engramFetch`（严格，→ 模型可见的工具错误）与 `bestEffortEngramFetch`（`:294-301`，→ `warnEngramFailure` 打 stderr）。注释解释：静默丢弃会让"记忆停止工作"的用户**完全没有任何信号**。
+- 两种失败通道：`engramFetch`（严格，→ 模型可见的工具错误）与 `bestEffortEngramFetch`（`:330-337`，→ `warnEngramFailure`（`:321-328`）打 stderr）。注释解释：静默丢弃会让"记忆停止工作"的用户**完全没有任何信号**。
 - `scheduleEngramSelfHeal`：探测循环（5s × 6 次）恢复后清掉所有 session 的状态栏标签。
 
-### 2.3 项目解析（`index.ts:303-341, 716-793`）
+### 2.3 项目解析（`index.ts:339-370, 833-934`；`detectLocalConfigProject` / `detectServerProject` / `isSafeDetectedProject` / `requireResolvedProject`）
 
-- `GET /project/current?cwd=` 最多重试 5 次（`:716-729`）。
-- **404 降级**：老服务端没有该路由时回退到最近的 `.engram/config.json`，并附版本不匹配警告（`detectLocalConfigProject`，`:303-334`）。
-- `isSafeDetectedProject`（`:731-742`）：拒绝 空 / `"unknown"` / 带 `error_hint` / 含路径分隔符或控制字符。
+- `GET /project/current?cwd=` 最多重试 5 次（`detectServerProject`，`:833-846`）。
+- **404 降级**：老服务端没有该路由时回退到最近的 `.engram/config.json`，并附版本不匹配警告（`detectLocalConfigProject`，`:339-370`）。
+- `isSafeDetectedProject`（`:848-859`）：拒绝 空 / `"unknown"` / 带 `error_hint` / 含路径分隔符或控制字符。
 - **三态而不是二态**：`applyDetectedProject` 区分"已解析"、"待定（`projectDetectionPending`）"、"解析错误（`projectResolutionError`）"。
-- **写入闸门**：`requireResolvedProject()`（`:775-778`）在待定或出错时**直接抛**。
-- 兜底项目名 = 目录 basename 小写（`:439-441`），但**只用于显示**，不用于写入。
+- **写入闸门**：`requireResolvedProject()`（`:931-934`）在待定或出错时**直接抛**。
+- 兜底项目名 = 目录 basename 小写（`fallbackProjectName`，`:491-493`），但**只用于显示**，不用于写入。
 
-### 2.4 session 身份（`index.ts:822-865`）
+### 2.4 session 身份（`index.ts:794-831, 985-1017`；`ensureSession` / `requireRuntimeSessionID` / `observeRuntimeSessionID`）
 
-- `requireRuntimeSessionID` 抛错而不是回退；且**不做 trim**——注释（`:826-828`）："Pi runtime session ID 是不透明的：空白校验但不归一化……在这里 trim 会劈开这个身份，并在关闭时留下孤立的缓存项。"
-- `observeRuntimeSessionID` 记录所有见过的 ID；**一旦见过两个不同的 ID，就永久判定身份歧义**，压缩恢复直接失败关闭（`:837-838`）。
-- `ensureSession`（`:690-714`）：按 `project:sessionId` 去重、**飞行中合并**（`sessionRegistrationsInFlight`）、`POST /sessions` 返回 `null` 视为无法确认注册而抛错。
+- `requireRuntimeSessionID` 抛错而不是回退；且**不做 trim**——注释（`:982-984`）："Pi runtime session ID 是不透明的：空白校验但不归一化……在这里 trim 会劈开这个身份，并在关闭时留下孤立的缓存项。"
+- `observeRuntimeSessionID` 记录所有见过的 ID；**一旦见过两个不同的 ID，就永久判定身份歧义**，压缩恢复直接失败关闭（歧义判断 `:1002-1004`）。
+- `ensureSession`（`:794-831`）：按 `project:sessionId` 去重、**飞行中合并**（`sessionRegistrationsInFlight`）、`POST /sessions` 返回 `null` 视为无法确认注册而抛错。
 
-### 2.5 工具面（`index.ts:871-973, 1249-1269`）
+### 2.5 工具面（`index.ts:1027-1136, 1201-1447`；`MEMORY_TOOL_SCHEMAS` / `callMemoryTool` / `registerMemoryTools`）
 
-- 19 个原生工具，名字就是 `mem_*`（不带前缀）。
+- 22 个原生工具，名字就是 `mem_*`（不带前缀）。
 - Schema 用 typebox（`MEMORY_TOOL_SCHEMAS`）。
 - `pi.registerTool({name, label, description, promptSnippet, parameters, renderShell:'self', execute, renderCall, renderResult})`。
 - `execute` 里 `initOnce` **在受保护路径内**：被拒绝的启动必须以规范化的工具错误抵达 agent，而不是逃出工具边界的 rejection。
 - 工具不接收模型传来的 `session_id` 作为权威——插件用 `runtimeSessionForWrite()` 自己注入。
 
-### 2.6 系统提示协议（`index.ts:58-111, 1319-1346`）
+### 2.6 系统提示协议（`index.ts:61-114, 1509-1536`；`MEMORY_INSTRUCTIONS` / `before_agent_start`）
 
 - `MEMORY_INSTRUCTIONS` 是一大段 Markdown 协议（何时必须 `mem_save`、格式、何时搜索、会话关闭、压缩后怎么办）。
 - 在 `before_agent_start` 里**每轮**拼到 systemPrompt 前面。这天然跨压缩存活。
 - 关键句："Do not infer alternative Engram tool names from other integrations"。
 
-### 2.7 压缩恢复（`index.ts:1289-1317` + `compaction-recovery.js`）
+### 2.7 压缩恢复（`index.ts:1477-1507`；`session_compact` + `compaction-recovery.js`）
 
-- `session_compact` → `extractCompactedSummary(event)` 沿 19 条字段路径找摘要（`compaction-recovery.js:1-23`）（`compactionEntry.summary` 优先）。
+- `session_compact` → `extractCompactedSummary(event)` 沿 19 条字段路径找摘要（`SUMMARY_FIELD_PATHS` `compaction-recovery.js:1-23`；`extractCompactedSummary` `:51-58`）（`compactionEntry.summary` 优先）。
 - **每个提前退出路径都先排好 fallback**：即便启动、项目解析或严格注册都够不到 Engram，**下一个 turn 也必须收到这个**。
 - 归档：`POST /observations`，`type:"session_summary"`、`topic_key:"session/compaction-recovery"`。
-- **4 种结局**（`compaction-recovery.js:25-105`）：`Confirmed` / `Failed` / `Unknown`（超时，**禁止盲目重试**，先 `mem_search`/`mem_doctor` 验证）/ `Unavailable`（session 或 project 无法确认，不尝试归档）。
+- **4 种结局**（`ArchiveOutcome` `compaction-recovery.js:25-30`；`buildRecoveryNotice` `:95-106`）：`Confirmed` / `Failed` / `Unknown`（超时，**禁止盲目重试**，先 `mem_search`/`mem_doctor` 验证）/ `Unavailable`（session 或 project 无法确认，不尝试归档）。
 - 通知存在 `pendingRecoveryNotice`（**带 sessionId**），在**下一次 `before_agent_start`** 消费一次后清空。
 - 不认识的事件形状返回 `undefined` 而不是抛。
 
@@ -132,7 +132,7 @@ pi 不等外部服务，自己拉起 `engram serve`（`index.ts:460-676`）：
 | `pi.on('before_agent_start')` 返回增强 systemPrompt | `systemPrompt.context({name, order, text: (ctx) => string})` | 见下方 (a) |
 | `pi.on('tool_execution_end')` | `ctx.on('tools/result')` | 同为观察型（emit、失败被吞），选它做 passive 捕获正确 |
 | `pi.on('session_shutdown')` | `ctx.on('agent/disposed')` | **fire-and-forget**，且 `store.delete` 在 emit 之前 → 只清本地状态，不做必须落盘的写 |
-| `pi.registerTool(...)` + typebox | `ctx.tools.register(defineTool({...}))` | DSH 的 `output` 是**运行时强制**的；18 个工具共用一个 `ENGRAM_OUTPUT`；任意 JSON 用 `{type:'json'}` 逃逸口 |
+| `pi.registerTool(...)` + typebox | `ctx.tools.register(defineTool({...}))` | DSH 的 `output` 是**运行时强制**的；20 个工具共用一个 `ENGRAM_OUTPUT`；任意 JSON 用 `{type:'json'}` 逃逸口 |
 | `renderCall`/`renderResult` | `presentCall`/`presentResult` | 见下方 (d) |
 | `ctx.ui.setStatus('engram', '🧠 …')` | `ctx.logger` + `presentResult` | DSH 没有全局状态栏 |
 | `ENGRAM_URL`/`ENGRAM_BIN`/`ENGRAM_PORT` | 同 | 直接沿用上游环境变量约定 |
@@ -168,24 +168,24 @@ pi 用 `renderShell:'self'` 让扩展**拥有整块 call/result 外壳**（返�
 
 ## 5. 项目级全局 vs 会话作用域（**审核后重写**）
 
-pi 的 `index.ts:678-688` 真实清单是 **6 项**，但其中只有 **4 项是真全局**：
+pi 的 `index.ts:763-767`（`project` / `directory` / `pendingRecoveryNotice` / `projectResolutionError` / `projectDetectionPending`）真实清单是 **5 项**，但其中只有 **4 项是真全局**：
 
 | 变量 | 真实作用域 | 证据 |
 | --- | --- | --- |
-| `project` | **真全局** | `:678` |
-| `directory` | **真全局** | `:679` |
-| `projectResolutionError` | **真全局** | `:681` |
-| `projectDetectionPending` | **真全局** | `:682` |
-| `pendingRecoveryNotice` | 已带 `sessionId` 字段 | `:680` |
-| `knownSessions` | **已按会话**：key = `${sessionProject}:${sessionId}` | `:686`、`:691-692` |
-| `sessionRegistrationsInFlight` | **已按会话**：同一复合 key | `:687` |
-| `toolCounts` | **已按会话**：key = sessionId | `:688`、`:1358` |
-| `engramSelfHealContexts` | **已按会话**：key = sessionId | `:401` |
+| `project` | **真全局** | `:763` |
+| `directory` | **真全局** | `:764` |
+| `projectResolutionError` | **真全局** | `:766` |
+| `projectDetectionPending` | **真全局** | `:767` |
+| `pendingRecoveryNotice` | 已带 `sessionId` 字段 | `:765` |
+| `knownSessions` | **已按会话**：key = `${sessionProject}:${sessionId}` | `:771`、`:795` |
+| `sessionRegistrationsInFlight` | **已按会话**：同一复合 key | `:773` |
+| `toolCounts` | **已按会话**：key = sessionId | `:777`、`:1548` |
+| `engramSelfHealContexts` | **已按会话**：key = sessionId | `:453` |
 
 **修正第一版的错误**：不能把这些都说成"进程级全局"。真正需要下沉的是**那 4 个项目解析状态**，加上 `pendingRecoveryNotice`（它已经不得不带 sessionId，正是多会话压力的前兆）。
 
 **也不能说"pi 假设单会话"**：pi 的作者是**主动检测并防御**——
-`observeRuntimeSessionID`（`:839-855`）见到第二个不同 ID 就**永久**置 `runtimeSessionIdentityAmbiguous`，`soleActiveRuntimeSessionID`（`:857-861`）要求 `size === 1` 才返回值，压缩恢复随即 fail closed。
+`observeRuntimeSessionID`（`:995-1011`）见到第二个不同 ID 就**永久**置 `runtimeSessionIdentityAmbiguous`，`soleActiveRuntimeSessionID`（`:1013-1017`）要求 `size === 1` 才返回值，压缩恢复随即 fail closed。
 
 **DSH 侧结论（不变）**：那 4 项 + notice 下沉到 `ctx.sessionProjections`；`engram serve` 是进程级资源，其初始化状态**保持模块级**。DSH 用 `ToolRunContext.agent` 直接拿到发起调用的 agent，**`soleActiveRuntimeSessionID`/`runtimeSessionIdentityAmbiguous` 这一整类补丁不需要存在**。
 
@@ -197,8 +197,8 @@ pi 的 `index.ts:678-688` 真实清单是 **6 项**，但其中只有 **4 项是
 
 | pi 的能力 | 为什么 DSH 没有 |
 | --- | --- |
-| `mem_list_projects` | 直接调 `store.ListProjectsWithStats()`，**HTTP 无路由**（`mcp.go:1029-1047`）→ 工具面 18 个而非 19 |
-| `mem_pin` / `mem_unpin` | **pi 无先例**：pi 的 19 工具集不含这两个（pi 含 `mem_delete`/`mem_stats`/`mem_timeline`，本设计排除 `mem_delete`）。HTTP 路由存在（`PUT/DELETE /observations/{id}/pin`），但实现无参照 |
+| `mem_list_projects` | 直接调 `store.ListProjectsWithStats()`，**HTTP 无路由**（`mcp.go:1029-1047`）→ 工具面 20 个而非 22 |
+| `mem_pin` / `mem_unpin` | pi 0.1.14 的 22 工具集已含这两个（`index.ts:35-56`），handler 在 `index.ts:1373-1376`，但它是裸 `fetch(PUT/DELETE /observations/{id}/pin)`，与我们的 `EngramClient` 传输层形状不同——HTTP 接线无先例可直接抄 |
 | `/review` 的 UI 化呈现 | DSH 没有 Pi 的 TUI 组件模型，降级为 `presentResult` 文本 |
 | `pi-mcp-adapter` 集成 | DSH 有自己的 mcp-client；本方案不用 MCP |
 | `sessionManager.getSessionId()` 的不透明语义 | DSH 用 `agent.id === session.header.id`，语义明确 |
@@ -209,7 +209,7 @@ pi 的 `index.ts:678-688` 真实清单是 **6 项**，但其中只有 **4 项是
 
 1. **项目解析状态按会话隔离**（§5）。
 2. **按 session 过滤压缩事件 + 重入保护**——**修正第一版**：压缩事件确实广播（`scope/src/index.ts:170-185` 无 scope tag 时 `return true`），但**广播 ≠ 重复**：一个监听器每个事件只跑一次，两次压缩是两个不同 `compactionId`、两次合法归档。而且 resume/replay **根本不重发**（`session/src/index.ts:474-486`："constructor seeds do not emit"）。所以真正必需的是 (i) 忽略未追踪 session 的事件，(ii) 防止第二次压缩在第一次归档**在飞时**重入；per-session `lastCompactionId` 作为廉价幂等守卫保留，但理由要写对。
-3. **工具面缩减为 18 个**并显式记录 `mem_list_projects` 缺失。
+3. **工具面缩减为 20 个**并显式记录 `mem_list_projects` 缺失。
 4. **服务器生命周期主体移植 pi §2.1**（共享 deadline / 只有 ready 算有服务 / 宽限 re-probe / `sharedInitialization` 退避窗口 / 代级恢复），**只从 `mcp-client/src/connection.ts` 借纪律**：generation 所有权、指数退避、定时器 `.unref()`、`dispose()` 等静止。
    **修正第一版**：第一版说"照 connection.ts 做监督器"是**退步**——connection.ts 需要 reconnect 循环，是因为 stdio 是**有状态长连接**（进程死是可观测事件，且已注册工具在 re-sync 前全部失效）；而 HTTP + 独立 serve **没有可丢的长连接**，失败只能按请求逐个观测，服务还可能被外部拥有（pi 已经在跑同一个）。正确形态是**请求级重试 + 显式 readiness 探测 + refused 时的有界重启**。
 5. **`.engram/config.json` 引导**——DSH 常见从多仓库父目录启动，歧义是高频路径而非边缘情况。

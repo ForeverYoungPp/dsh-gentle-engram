@@ -47,12 +47,12 @@ Memory operations are internal bookkeeping, never the user-facing answer. Comple
 
 When the user asks to recall past work:
 1. Start with \`mem_context\`, then search with 1–2 distinctive keywords.
-2. Ordinary \`mem_search\` is scoped to the detected active project; its default \`match_mode:"all"\` means AND. For broad recall, use \`match_mode:"any"\` with \`all_projects:true\`. If a scoped search is empty, retry once this way before concluding no memory exists.
+2. Recall is scoped to this session's resolved project, and \`match_mode:"any"\` broadens matching within it. \`all_projects: true\` is the one explicit cross-project sweep, used only when the user explicitly asks for one — never as an automatic fallback, because it returns other projects' memories into this session.
 3. After hits, narrow follow-up searches by project, type, or \`match_mode:"all"\`, then use \`mem_get_observation\` for full content.
 
 ### SESSION CLOSE PROTOCOL
 
-Before ending a session or saying "done", call \`mem_session_summary\` with Goal, Instructions, Discoveries, Accomplished, Next Steps, and Relevant Files. If \`mem_session_summary\` fails because Engram cannot detect a project, ask the user which project should receive the summary, then retry with \`project: "<name>"\`.
+Before ending a session or saying "done", call \`mem_session_summary\` with Goal, Instructions, Discoveries, Accomplished, Next Steps, and Relevant Files. Writes are bound to this session's resolved project, and \`mem_session_summary\` takes no project argument. If Engram cannot detect a project, tell the user to add \`.engram/config.json\` or to launch inside the repository; retrying with a \`project\` argument will not help.
 
 ### MULTI-REPOSITORY WORKSPACES
 

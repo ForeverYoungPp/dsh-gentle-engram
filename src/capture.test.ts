@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { test } from 'node:test'
 
-import { ArchiveOutcome, buildRecoveryNotice } from './capture.ts'
+import { ArchiveOutcome, buildRecoveryNotice, passivePayload } from './capture.ts'
 
 // P4: the notice carries the archive outcome and nothing else. This pins the four
 // instructions — they are now the whole notice — and that buildRecoveryNotice
@@ -31,4 +31,32 @@ test('the compaction call site passes no Engram context to the notice', async ()
   const source = await readFile(new URL('./index.ts', import.meta.url), 'utf8')
   assert.ok(source.includes('buildRecoveryNotice(project, undefined, outcome)'),
     'the compaction notice is no longer built without context')
+})
+
+// Passive capture: the gate and the payload must be the same string. The gate
+// used to test the full result while the payload was sliced from the start, so
+// a header past the cut passed the gate and was removed before sending — a
+// request Engram's parser could only find nothing in.
+
+test('passivePayload returns short text with a learning header unchanged', () => {
+  const text = 'notes\n## Key Learnings\n- one\n'
+  assert.equal(passivePayload(text, 20_000), text)
+})
+
+test('passivePayload slices from the header when the header sits past the limit', () => {
+  const padding = 'x'.repeat(500)
+  const text = `${padding}\n## Key Learnings\n- one\n`
+  const payload = passivePayload(text, 100)
+  assert.ok(payload !== undefined, 'the header should be found')
+  assert.ok(payload.startsWith('## Key Learnings'), `payload must start at the header, got: ${payload.slice(0, 40)}`)
+  assert.ok(payload.length <= 100, `payload of ${payload.length} chars exceeds the limit`)
+})
+
+test('passivePayload returns undefined when there is no learning section', () => {
+  assert.equal(passivePayload('## Notes\n- nothing to extract\n', 20_000), undefined)
+})
+
+test('passivePayload recognizes the Spanish learning header', () => {
+  const text = '## Aprendizajes Clave\n- dato\n'
+  assert.equal(passivePayload(text, 20_000), text)
 })

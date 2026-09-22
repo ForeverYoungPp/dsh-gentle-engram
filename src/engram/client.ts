@@ -45,8 +45,8 @@ export interface EngramFetchResult<T> {
   readonly timedOutMethod?: string
 }
 
-/** Server reachability as established by a health probe. */
-export type EngramHealth = 'ready' | 'refused' | 'indeterminate'
+/** Server reachability and ownership as established by a health probe. */
+export type EngramHealth = 'ready' | 'refused' | 'indeterminate' | 'foreign'
 
 /** The transport surface the rest of the plugin uses. */
 export interface EngramClient {
@@ -57,8 +57,12 @@ export interface EngramClient {
   requestResult<T>(path: string, options?: FetchOptions): Promise<EngramFetchResult<T>>
   /** Background request: never throws, always logs. */
   bestEffort<T>(path: string, options?: FetchOptions): Promise<T | null>
-  /** Fast reachability probe. */
-  probeHealth(): Promise<EngramHealth>
+  /**
+   * Fast reachability probe. The probe also checks ownership: only a server
+   * whose `/health` `instance_id` matches is `ready`; a mismatch, a missing
+   * field, or an unreadable body is `foreign`.
+   */
+  probeHealth(expectedInstanceId: string): Promise<EngramHealth>
   /** Install the one-generation recovery hook used after a refused connection. */
   setRecovery(recovery: (() => Promise<boolean>) | undefined): void
 }
@@ -76,6 +80,18 @@ export function isSafeToReplay(path: string, method: string): boolean {
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+/**
+ * The message for a timed-out request. A non-GET may already have been applied
+ * server-side, and Engram's writes carry no idempotency key, so replaying one
+ * could duplicate it; the caller is told to verify before retrying. A GET
+ * carries no such risk and keeps the plain timeout message.
+ */
+function timeoutMessage(path: string, method: string, timeoutMs: number): string {
+  const target = `Engram ${method} ${redactUrlPath(path)} timed out after ${timeoutMs}ms`
+  if (method === 'GET') return target
+  return `${target}; the request may already have been applied server-side. Do NOT blindly retry it: verify with mem_search or mem_doctor first.`
 }
 
 /**
@@ -166,7 +182,7 @@ export function createClient(config: EngramConfig, logger: Logger): EngramClient
     async request<T>(path: string, options?: FetchOptions): Promise<T | null> {
       const result = await requestResult<T>(path, options)
       if (result.timedOutMethod !== undefined) {
-        throw new EngramTimeoutError(`Engram ${result.timedOutMethod} ${redactUrlPath(path)} timed out after ${config.requestTimeoutMs}ms`)
+        throw new EngramTimeoutError(timeoutMessage(path, result.timedOutMethod, config.requestTimeoutMs))
       }
       return result.data
     },
@@ -181,14 +197,23 @@ export function createClient(config: EngramConfig, logger: Logger): EngramClient
         return null
       }
     },
-    async probeHealth(): Promise<EngramHealth> {
+    async probeHealth(expectedInstanceId: string): Promise<EngramHealth> {
+      let response: Response
       try {
-        const response = await fetch(`${baseUrl}/health`, { signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS) })
-        return response.ok ? 'ready' : 'indeterminate'
+        response = await fetch(`${baseUrl}/health`, { signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS) })
       } catch (error: unknown) {
         if (isTimeoutError(error)) return 'indeterminate'
         if (isConnectionRefusedError(error)) return 'refused'
         return 'indeterminate'
+      }
+      if (!response.ok) return 'indeterminate'
+      // Strict on purpose: a body whose `instance_id` is absent or unreadable is
+      // not this machine's server, so it is refused rather than tolerated.
+      try {
+        const health = await response.json() as { instance_id?: unknown } | null
+        return health?.instance_id === expectedInstanceId ? 'ready' : 'foreign'
+      } catch {
+        return 'foreign'
       }
     },
     setRecovery(next: (() => Promise<boolean>) | undefined): void {

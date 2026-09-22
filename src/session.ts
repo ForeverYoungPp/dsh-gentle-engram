@@ -4,8 +4,8 @@
  * This is a `Map` rather than a `sessionProjections` unit on purpose. A
  * projection is a **pure fold over the session log** — its `apply` must derive
  * state from committed events. What we hold here is HTTP-derived runtime
- * cache (a resolved project key, fetched context text, an archive outcome,
- * an in-flight registration). None of it can be recomputed by replaying
+ * cache (a resolved project key, an archive outcome, an in-flight
+ * registration). None of it can be recomputed by replaying
  * events, and none of it should be persisted into the log. The multi-session
  * correctness property that matters — never sharing one session's project or
  * buffer with another — is provided equally by keying on the agent id.
@@ -27,7 +27,14 @@ export interface SessionAgent {
 export interface SessionState {
   /** DSH agent id, which is also the session id. */
   readonly id: string
-  /** The session's absolute working directory, captured at session start. */
+  /**
+   * The session's absolute working directory, captured at session start.
+   *
+   * Empty when the session header reported none. That is not a missing value to
+   * repair: DSH declares the header's `cwd` optional, and every substitute would
+   * be this plugin host's directory rather than the session's. `resolveProject`
+   * refuses an empty directory, so the session fails closed instead.
+   */
   readonly cwd: string
   /** Engram session key. Starts as the agent id and is only replaced when that session has already ended. */
   engramSessionId: string
@@ -40,8 +47,6 @@ export interface SessionState {
    * `.engram/config.json` mid-session must recover without a restart.
    */
   projectCheckedAt: number
-  /** Cached context block, read by the synchronous prompt provider. */
-  contextText: string | undefined
   /** Pending compaction-recovery guidance, consumed once by the prompt provider. */
   pendingNotice: string | undefined
   /** Whether the Engram session row exists. */
@@ -67,8 +72,8 @@ export interface SessionState {
    * In-flight project/context warm-up, so concurrent callers share one pass.
    *
    * Warm-up is deliberately separate from registration: resolving the project
-   * and fetching context are read-only, while registering creates a row. Only
-   * a session that actually produces memory should leave a row behind.
+   * is read-only, while registering creates a row. Only a session that
+   * actually produces memory should leave a row behind.
    */
   startup: Promise<void> | undefined
   /** Serialized write tail; always settles. */
@@ -109,13 +114,18 @@ export function createSessionRegistry(logger: Logger): SessionRegistry {
     ensure(agent: SessionAgent): SessionState {
       const existing = states.get(agent.id)
       if (existing !== undefined) return existing
+      const cwd = agent.session.header.cwd
       const state: SessionState = {
         id: agent.id,
-        cwd: agent.session.header.cwd ?? process.cwd(),
+        // Deliberately NOT `?? process.cwd()`. DSH declares the header's `cwd`
+        // optional, so substituting this host's directory would attribute the
+        // session's memory to a project the session never named — the same
+        // guess this plugin refuses to make when a workspace is ambiguous.
+        // An empty directory is unresolvable, and `resolveProject` says so.
+        cwd: cwd ?? '',
         engramSessionId: agent.id,
         project: undefined,
         projectCheckedAt: 0,
-        contextText: undefined,
         pendingNotice: undefined,
         registered: false,
         registeredAt: 0,

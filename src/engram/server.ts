@@ -20,7 +20,7 @@
  * @module dsh-gentle-engram/engram/server
  */
 
-import { spawn, type ChildProcess } from 'node:child_process'
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { setTimeout as sleep } from 'node:timers/promises'
 import type { EngramConfig } from '../config.ts'
 import type { EngramClient, Logger } from './client.ts'
@@ -34,6 +34,7 @@ export interface ServerManager {
 const STARTUP_POLL_MS = 100
 const STARTUP_RETRY_BASE_MS = 1000
 const STARTUP_RETRY_MAX_MS = 60_000
+const LOCAL_INSTANCE_ID_PATTERN = /^[a-f0-9]{32}$/
 
 /** A sleep an abandoned readiness wait can cut short. */
 async function waitCancellable(ms: number, signal: AbortSignal): Promise<void> {
@@ -82,10 +83,49 @@ export function createServerManager(config: EngramConfig, client: EngramClient, 
     return Math.min(STARTUP_RETRY_MAX_MS, STARTUP_RETRY_BASE_MS * 2 ** (failures - 1))
   }
 
-  async function waitForReadiness(signal: AbortSignal, deadline: number): Promise<void> {
+  let localInstanceId: string | undefined
+
+  /**
+   * This machine's Engram instance id, read once per process and cached like
+   * the reference adapter caches it: it cannot change while we run, and every
+   * recovery would otherwise pay another CLI invocation. `ENGRAM_NO_UPDATE_CHECK`
+   * is set because the CLI otherwise performs a GitHub update check on every
+   * invocation (measured 1.6 s for this call) whose answer cannot matter here.
+   *
+   * The read is strict — spawn failure, non-zero exit, empty or malformed
+   * output all refuse — because without a trustworthy id there is no way to
+   * tell this machine's server from any other process on the port. Setting
+   * `ENGRAM_URL` to an explicitly chosen server is the documented way to skip
+   * the check entirely.
+   */
+  function localInstanceIdWithin(deadline: number): string {
+    if (localInstanceId !== undefined) return localInstanceId
+    const timeoutMs = Math.max(1, deadline - Date.now())
+    const result = spawnSync(config.binary, ['instance-id'], {
+      encoding: 'utf8',
+      timeout: timeoutMs,
+      windowsHide: true,
+      env: { ...process.env, ENGRAM_NO_UPDATE_CHECK: '1' },
+    })
+    const id = result.status === 0 ? result.stdout.trim() : ''
+    if (!LOCAL_INSTANCE_ID_PATTERN.test(id)) {
+      throw new Error(
+        `Engram could not read this machine's local server identity from ${config.binary} instance-id; ` +
+        'set ENGRAM_URL to an explicitly chosen server to skip this check entirely',
+      )
+    }
+    localInstanceId = id
+    return id
+  }
+
+  async function waitForReadiness(signal: AbortSignal, deadline: number, expectedInstanceId: string): Promise<void> {
     while (Date.now() < deadline) {
       if (signal.aborted) throw new Error(`Engram readiness wait for ${client.baseUrl} was cancelled`)
-      if (await client.probeHealth() === 'ready') return
+      const health = await client.probeHealth(expectedInstanceId)
+      if (health === 'ready') return
+      // A foreign answer is a verdict, not a slow start: waiting would only
+      // delay the same refusal until the deadline.
+      if (health === 'foreign') throw new Error(`Engram server ownership mismatch at ${client.baseUrl}`)
       // The probe can outlive the abort, so re-check before sleeping again.
       if (signal.aborted) throw new Error(`Engram readiness wait for ${client.baseUrl} was cancelled`)
       await waitCancellable(STARTUP_POLL_MS, signal)
@@ -93,7 +133,7 @@ export function createServerManager(config: EngramConfig, client: EngramClient, 
     throw new Error(`Engram server at ${client.baseUrl} did not become ready before the startup timeout`)
   }
 
-  function spawnAndWait(deadline: number): Promise<void> {
+  function spawnAndWait(deadline: number, expectedInstanceId: string): Promise<void> {
     return new Promise((resolvePromise, rejectPromise) => {
       let child: ChildProcess | undefined
       let settled = false
@@ -131,7 +171,7 @@ export function createServerManager(config: EngramConfig, client: EngramClient, 
       child.once('error', onError)
       child.once('exit', onExit)
       child.once('spawn', () => {
-        void waitForReadiness(readiness.signal, deadline).then(
+        void waitForReadiness(readiness.signal, deadline, expectedInstanceId).then(
           () => settle(),
           (error: unknown) => settle(error instanceof Error ? error : new Error(String(error))),
         )
@@ -140,18 +180,22 @@ export function createServerManager(config: EngramConfig, client: EngramClient, 
   }
 
   async function initialize(): Promise<void> {
+    // An explicitly configured server is the user's own choice, so it is
+    // trusted as given; this is also the documented opt-out when the local
+    // `instance-id` cannot be read.
     if (config.url !== undefined) return
     const deadline = Date.now() + config.startupTimeoutMs
-    const health = await client.probeHealth()
+    const instanceId = localInstanceIdWithin(deadline)
+    const health = await client.probeHealth(instanceId)
     if (health === 'ready') return
+    if (health === 'foreign') throw new Error(`Engram server ownership mismatch at ${client.baseUrl}`)
 
-    // Only "ready" proves a server is answering. Every other outcome — a
-    // definitive refusal, an aborted probe, a DNS failure, an error shape we do
-    // not recognise — means we have no server, so launch one. Reading an
-    // inconclusive probe as "a server must be starting" is what lets a cold
-    // machine burn the whole budget polling a port nobody will bind.
+    // Only "ready" proves our server is answering. A refusal or an inconclusive
+    // probe means we have none, so launch one. Reading an inconclusive probe as
+    // "a server must be starting" is what lets a cold machine burn the whole
+    // budget polling a port nobody will bind.
     try {
-      await spawnAndWait(deadline)
+      await spawnAndWait(deadline, instanceId)
     } catch (error: unknown) {
       // An inconclusive probe leaves room for another process to already own
       // the port, which is exactly what makes our child fail. Give that
@@ -159,7 +203,7 @@ export function createServerManager(config: EngramConfig, client: EngramClient, 
       if (health !== 'indeterminate') throw error
       const readiness = new AbortController()
       try {
-        await waitForReadiness(readiness.signal, deadline)
+        await waitForReadiness(readiness.signal, deadline, instanceId)
       } catch {
         // The spawn failure is the actionable one; a readiness timeout only restates it.
         throw error
