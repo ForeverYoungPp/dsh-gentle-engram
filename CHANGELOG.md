@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.0](https://github.com/ForeverYoungPp/dsh-gentle-engram/compare/v0.3.1...v0.4.0) (2026-09-22)
+
+
+### Features
+
+* **memory:** scope recall to the session project, drop ambient injection, add stats/timeline ([71b8e09](https://github.com/ForeverYoungPp/dsh-gentle-engram/commit/71b8e09006ecec51daa6fdafd9e11738f2dd362e))
+* **transport:** verify the server instance and report write timeouts honestly ([6ec734c](https://github.com/ForeverYoungPp/dsh-gentle-engram/commit/6ec734cebe0a5e2fd1a4d37b325721d09f33fa38))
+
+
+### Bug Fixes
+
+* **memory:** project-exact recall, on-demand context, and reference-aligned transport ([7a076d8](https://github.com/ForeverYoungPp/dsh-gentle-engram/commit/7a076d8c589bd3d16cf085288913e3e80c44f55d))
+
 ## [0.3.1](https://github.com/ForeverYoungPp/dsh-gentle-engram/compare/v0.3.0...v0.3.1) (2026-09-21)
 
 
