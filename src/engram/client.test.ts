@@ -265,6 +265,22 @@ test('a private query value reaches fetch redacted while the URL shape is preser
   }
 })
 
+// --- Lossless JSON on the transport funnel ----------------------------------
+
+test('a server payload carrying a negative zero reaches the caller normalized', async () => {
+  const stub = stubFetch(() => new Response('{"rank":-0,"rows":[{"rank":-0},{"rank":0}]}', { status: 200 }))
+  try {
+    const result = await client().request<{ rank: number; rows: { rank: number }[] }>('/search?q=negative-zero')
+    assert.ok(result !== null)
+    assert.equal(Object.is(result.rank, -0), false, 'the funnel must remove the -0 the host rejects')
+    assert.equal(Object.is(result.rank, 0), true)
+    assert.equal(Object.is(result.rows[0].rank, 0), true)
+    assert.equal(Object.is(result.rows[1].rank, 0), true)
+  } finally {
+    stub.restore()
+  }
+})
+
 // --- probeHealth error mapping ----------------------------------------------
 // The ready/foreign mapping is pinned in server.test.ts through ensure(); the
 // transport failures are the subject here.
