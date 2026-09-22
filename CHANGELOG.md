@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.1](https://github.com/ForeverYoungPp/dsh-gentle-engram/compare/v0.4.0...v0.4.1) (2026-09-22)
+
+
+### Bug Fixes
+
+* **json:** normalize negative zero so tool output is always lossless JSON ([d9ae1a6](https://github.com/ForeverYoungPp/dsh-gentle-engram/commit/d9ae1a625fee2952575313ca17e106db0a685bc7))
+* **json:** normalize negative zero so tool output is always lossless JSON ([3662a2b](https://github.com/ForeverYoungPp/dsh-gentle-engram/commit/3662a2bd055c4e69cae9622e8e5dc4b69cbc62d9))
+
 ## [0.4.0](https://github.com/ForeverYoungPp/dsh-gentle-engram/compare/v0.3.1...v0.4.0) (2026-09-22)
 
 
