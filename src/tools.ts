@@ -4,8 +4,10 @@
  * These replace the `mcp__engram__mem_*` rows this plugin used to depend on.
  * The set is Engram's `agent` MCP profile minus `mem_list_projects`, which has
  * no HTTP route (its handler calls the store directly). `mem_delete` is
- * deliberately absent too: its route is behind `requireAuth`, so it would fail
- * in a default installation.
+ * deliberately absent too: this plugin sends no `Authorization` header, so the
+ * route's `requireAuth` check would reject it in an installation that sets
+ * `ENGRAM_HTTP_TOKEN` (an unset token leaves the server open, so the route is
+ * not the blocker). The tool stays unexposed by decision.
  *
  * Two signatures deviate from the MCP originals. `mem_session_start` and
  * `mem_session_end` take no model-supplied id: session identity is owned by
@@ -14,6 +16,8 @@
  *
  * @module dsh-gentle-engram/tools
  */
+
+import { isAbsolute } from 'node:path'
 
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { defineTool, type ToolRunContext } from '@deepseek-ai/dsh-tools'
@@ -146,8 +150,13 @@ async function sessionForWrite(exec: ToolRunContext, deps: ToolDeps): Promise<Se
   return state
 }
 
-/** Fail-closed gate: no write without a resolved project. */
-function requireProject(state: SessionState): string {
+/** Fail-closed gate: no write or recall without a resolved project. */
+export function requireProject(state: SessionState): string {
+  // A session that never named a directory has no workspace to attribute
+  // memory to, so the config-file guidance below cannot help it.
+  if (state.cwd.trim().length === 0) {
+    throw new Error(`Engram cannot tell which project this session's memory belongs to: the session did not report a working directory. Start DeepSeek Harness from inside the repository you want memory for.`)
+  }
   const project: ProjectResolution | undefined = state.project
   if (project === undefined) throw new Error('Engram project resolution has not completed for this workspace yet')
   if (project.kind === 'resolved') return project.project
@@ -216,18 +225,22 @@ export function registerTools(
 
   add(defineTool({
     name: 'mem_search',
-    description: 'Search persistent Engram memory for past work, decisions, or context. Scoped to the active project unless all_projects is true. If a scoped search returns nothing, retry once with match_mode "any" and all_projects true before concluding no memory exists.',
+    description: 'Search persistent Engram memory for past work, decisions, or context. Scoped to this session\'s resolved project; all_projects is an explicit cross-project sweep to use only when the user explicitly asks for one, never an automatic fallback, because it returns other projects\' memories into this session.',
     parameters: {
       query: requiredString('Search query — natural language or keywords'),
       type: optionalString('Filter by observation type'),
       scope: optionalString(SCOPE),
       limit: optionalNumber('Maximum results'),
       match_mode: optionalString(MATCH_MODE),
-      all_projects: optionalBoolean('Search across every project; when true the project filter is ignored'),
+      all_projects: optionalBoolean('Search across every project; explicit cross-project sweep, not a fallback'),
     },
     output: ENGRAM_OUTPUT,
     execute: async (args, exec) => {
       const state = await sessionFor(exec, deps)
+      // An omitted project is resolved by the Engram server against its own
+      // working directory, which no session owns. So there are exactly two
+      // states: this session's resolved project, or an explicit all_projects
+      // widening.
       const project = args.all_projects === true ? undefined : requireProject(state)
       return deps.client.request(`/search${queryString({
         q: args.query,
@@ -251,6 +264,42 @@ export function registerTools(
     execute: async (args, exec) => {
       const state = await sessionFor(exec, deps)
       return deps.client.request(`/context${queryString({ project: requireProject(state), scope: args.scope })}`, { signal: exec.signal })
+    },
+  }))
+
+  add(defineTool({
+    name: 'mem_stats',
+    description: 'Report operational statistics for this session\'s project: sessions, observations and prompts. all_projects is an explicit cross-project sweep to use only when the user explicitly asks for one, never an automatic fallback.',
+    parameters: {
+      all_projects: optionalBoolean('Report every project; explicit cross-project sweep, not a fallback'),
+    },
+    output: ENGRAM_OUTPUT,
+    execute: async (args, exec) => {
+      const state = await sessionFor(exec, deps)
+      // Same two states as mem_search: this session's resolved project, or an
+      // explicit all_projects widening.
+      const project = args.all_projects === true ? undefined : requireProject(state)
+      return deps.client.request(`/stats${queryString({ project, all_projects: args.all_projects })}`, { signal: exec.signal })
+    },
+  }))
+
+  add(defineTool({
+    name: 'mem_timeline',
+    description: 'Show the observations surrounding one memory by id, to recover what it was saved alongside. Scoped to this session\'s resolved project; there is no cross-project widening for one observation\'s neighbours.',
+    parameters: {
+      observation_id: requiredNumber('Observation id to center on'),
+      before: optionalNumber('Number of observations before'),
+      after: optionalNumber('Number of observations after'),
+    },
+    output: ENGRAM_OUTPUT,
+    execute: async (args, exec) => {
+      const state = await sessionFor(exec, deps)
+      return deps.client.request(`/timeline${queryString({
+        observation_id: args.observation_id,
+        before: args.before,
+        after: args.after,
+        project: requireProject(state),
+      })}`, { signal: exec.signal })
     },
   }))
 
@@ -413,7 +462,7 @@ export function registerTools(
 
   add(defineTool({
     name: 'mem_current_project',
-    description: 'Detect which Engram project this workspace resolves to, and list the known alternatives when it is ambiguous. Call this before saving when the workspace contains several repositories.',
+    description: 'Detect which Engram project this workspace resolves to, and list the known alternatives when it is ambiguous. Call this before saving when the workspace contains several repositories. An explicit cwd must be absolute: a relative one would be resolved against the Engram server process\'s own working directory.',
     parameters: {
       cwd: optionalString('Directory to inspect; defaults to this session\'s working directory'),
     },
@@ -421,6 +470,16 @@ export function registerTools(
     execute: async (args, exec) => {
       const state = await sessionFor(exec, deps)
       const cwd = args.cwd ?? state.cwd
+      // A cwd-less `/project/current` is answered from the serving process's
+      // own directory, which no session owns. Refuse instead of querying.
+      if (cwd.trim().length === 0) {
+        throw new Error('Engram cannot inspect an empty working directory: this session reported no working directory, and a cwd-less /project/current is answered from the Engram server\'s own directory. Pass cwd explicitly.')
+      }
+      // A relative explicit cwd would be resolved by the `engram serve` process
+      // against its own directory — a project this session never named.
+      if (args.cwd !== undefined && !isAbsolute(args.cwd)) {
+        throw new Error('Engram cannot inspect a relative working directory: it would be resolved against the Engram server process\'s own directory, a project this session never named. Pass an absolute path.')
+      }
       return deps.client.request(`/project/current${queryString({ cwd })}`, { signal: exec.signal })
     },
   }))
@@ -473,25 +532,36 @@ export function registerTools(
     output: ENGRAM_OUTPUT,
     execute: async (args, exec) => {
       const state = await sessionFor(exec, deps)
-      const project = state.project?.kind === 'resolved' ? state.project.project : undefined
+      // A request without a project is resolved by the Engram server against its own
+      // working directory, not this session's. Fail closed instead of letting it guess.
+      const project = requireProject(state)
       return deps.client.request(`/doctor${queryString({ project, check: args.check })}`, { signal: exec.signal })
     },
   }))
 
   add(defineTool({
     name: 'mem_review',
-    description: 'List memories whose review interval has elapsed, or mark one as reviewed to reset its clock.',
+    description: 'List memories whose review interval has elapsed, or mark one as reviewed to reset its clock. Listing is scoped to this session\'s resolved project; all_projects is an explicit cross-project sweep to use only when the user explicitly asks for one.',
     parameters: {
       action: requiredString('Action: list | mark_reviewed'),
       observation_id: optionalNumber('Observation id, for action=mark_reviewed'),
       limit: optionalNumber('Maximum results, for action=list'),
+      all_projects: optionalBoolean('List reviews across every project; explicit, for an ambiguous workspace'),
     },
     output: ENGRAM_OUTPUT,
     execute: async (args, exec) => {
       const state = await sessionFor(exec, deps)
-      const project = state.project?.kind === 'resolved' ? state.project.project : undefined
       if (args.action === 'list') {
-        return deps.client.request(`/review${queryString({ project, limit: args.limit })}`, { signal: exec.signal })
+        // The same two states as mem_search. A request without a project is
+        // resolved by the Engram server against its own working directory, not
+        // this session's, so the fail-closed default stays unless the caller
+        // explicitly widens.
+        const all = args.all_projects === true
+        return deps.client.request(`/review${queryString({
+          project: all ? undefined : requireProject(state),
+          limit: args.limit,
+          all_projects: all ? true : undefined,
+        })}`, { signal: exec.signal })
       }
       if (args.action === 'mark_reviewed') {
         if (args.observation_id === undefined) throw new Error('observation_id is required for action=mark_reviewed')

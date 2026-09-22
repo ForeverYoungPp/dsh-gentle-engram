@@ -40,6 +40,25 @@ That recommendation was overridden deliberately.
 This is recorded so the trade-off is not re-litigated. If the tool surface is ever
 revisited, it is a product question, not a defect in this document.
 
+### Follow-up decision: recall is pull-based
+
+Decision: the plugin injects **no project memory**. The system-prompt contributor
+carries the static protocol plus the one-shot post-compaction notice; everything
+else the model pulls on demand with `mem_context` / `mem_search`, exactly as the
+reference Pi adapter does.
+
+The standing ambient block and the warm-up fetch that fed it were removed for two
+reasons:
+
+- It cost a per-session context block that Engram does not size-contract, so the
+  plugin had to ship a truncation knob to contain it.
+- An injected block reads as *this session's* context, so a mis-resolved project
+  would make another project's memories look recallable here — the cross-project
+  leak the project-scoping work exists to prevent.
+
+User-visible consequence, accepted deliberately: a new session starts with no
+memory in context until the model calls `mem_context`.
+
 ## 3. Invariants
 
 Each of these has a matching comment in the code. They must keep holding.
@@ -47,8 +66,19 @@ Each of these has a matching comment in the code. They must keep holding.
 - **Fail closed on projects.** No write happens without a resolved project, and a
   `200` carrying `error_hint` counts as a failure rather than a detection. Guessing
   would file memory under the wrong project.
+- **A project never comes from the server's directory.** Every request that carries
+  a project takes it from the session's own resolution, or from a caller's explicit
+  `project` argument on a read tool — never from the working directory of the
+  `engram serve` process. An unresolved project fails closed rather than being
+  guessed.
 - **One writer per store.** Every read and write goes through HTTP, so only
   `engram serve` touches the SQLite file. There is no second resolution path.
+- **The server is this machine's own Engram instance.** Before attaching, the
+  plugin compares the answering server's `/health` `instance_id` against
+  `engram instance-id`, and a mismatch — or a missing, unreadable identity — is
+  refused rather than adopted: a process that merely holds the port is not ours
+  to trust. `ENGRAM_URL` is the explicit opt-out, and an explicitly chosen
+  server is used as given, with no identity check.
 - **Session identity is the agent id.** A resumed session keeps its Engram
   binding; a fresh key is minted only once the current row has ended.
 - **Registration is deferred to the first write.** Reading memory must not leave a
@@ -75,9 +105,11 @@ Each of these has a matching comment in the code. They must keep holding.
 ## 4. Non-goals
 
 No hardcoded session summary. No regex secret scanning. No dual MCP + HTTP
-transport. No unix-socket transport yet. `mem_delete` stays unexposed, because its
-route requires a token. And never silently guess which project a workspace belongs
-to — that one is a safety property, not a preference.
+transport. No unix-socket transport yet. `mem_delete` stays unexposed: the route
+sits behind `requireAuth`, and this plugin sends no `Authorization` header — with
+`ENGRAM_HTTP_TOKEN` unset the check passes through, so the token is not the
+blocker, the missing header is. And never silently guess which project a workspace
+belongs to — that one is a safety property, not a preference.
 
 ## 5. Known residuals
 

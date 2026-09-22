@@ -14,6 +14,18 @@ import type { EngramClient, Logger } from './engram/client.ts'
 import type { JsonValue } from './json.ts'
 import type { SessionState } from './session.ts'
 
+/** Upper bound for one passively captured tool result, mirroring the prompt cap. */
+export const PASSIVE_CAPTURE_LIMIT = 20_000
+
+/**
+ * Engram's passive extractor only reads items from a `## Key Learnings`
+ * section (`## Learnings` and `## Aprendizajes Clave` also count); anything
+ * else is parsed, discarded, and still costs a request, a queue slot and — since
+ * capture registers first — an Engram session row. Mirrors
+ * `learningHeaderPattern` in Engram's `internal/store/store.go`.
+ */
+const LEARNING_SECTION = /^#{2,3}\s+(?:Aprendizajes(?:\s+Clave)?|Key\s+Learnings?|Learnings?):?\s*$/im
+
 /** How one compaction archive ended. */
 export const ArchiveOutcome = {
   /** Engram acknowledged the write. */
@@ -54,6 +66,22 @@ export function blocksToText(blocks: unknown): string {
     .filter(part => part.length > 0)
     .join('\n')
     .trim()
+}
+
+/**
+ * The text to send to Engram's passive extractor, or undefined when there is
+ * nothing to extract.
+ *
+ * The gate and the payload are the same string by construction: when the text
+ * is longer than `limit`, the slice starts at the matched section header —
+ * never at the start of the text — so a header past the cut still survives for
+ * Engram's parser to find.
+ */
+export function passivePayload(text: string, limit: number): string | undefined {
+  const match = LEARNING_SECTION.exec(text)
+  if (match === null) return undefined
+  if (text.length <= limit) return text
+  return text.slice(match.index, match.index + limit)
 }
 
 /** Archive a session summary as an observation. */

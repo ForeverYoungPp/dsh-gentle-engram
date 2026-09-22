@@ -19,6 +19,8 @@ import {
   archiveSummary,
   blocksToText,
   buildRecoveryNotice,
+  passivePayload,
+  PASSIVE_CAPTURE_LIMIT,
   warnCapture,
 } from './capture.ts'
 import { createClient, type Logger } from './engram/client.ts'
@@ -29,7 +31,7 @@ import type { JsonValue } from './json.ts'
 import { PROTOCOL_CONTEXT_NAME, PROTOCOL_CONTEXT_ORDER, PROTOCOL_TEXT } from './protocol.ts'
 import { redactText } from './redaction.ts'
 import { createSessionRegistry, DRAIN_TIMEOUT_MS, type SessionAgent, type SessionState } from './session.ts'
-import { registerTools } from './tools.ts'
+import { registerTools, requireProject } from './tools.ts'
 
 export const name = 'dsh-gentle-engram'
 export const inject = ['tools']
@@ -84,18 +86,6 @@ const PROJECT_RETRY_MS = 30_000
  */
 const REGISTRATION_TTL_MS = 60_000
 
-/** Upper bound for one passively captured tool result, mirroring the prompt cap. */
-const PASSIVE_CAPTURE_LIMIT = 20_000
-
-/**
- * Engram's passive extractor only reads items from a `## Key Learnings`
- * section (`## Learnings` and `## Aprendizajes Clave` also count); anything
- * else is parsed, discarded, and still costs a request, a queue slot and — since
- * capture registers first — an Engram session row. Mirrors
- * `learningHeaderPattern` in Engram's `internal/store/store.go`.
- */
-const LEARNING_SECTION = /^#{2,3}\s+(?:Aprendizajes(?:\s+Clave)?|Key\s+Learnings?|Learnings?):?\s*$/im
-
 /** Extract plain text from a user message's content blocks. */
 function messageText(content: unknown): string {
   if (!Array.isArray(content)) return ''
@@ -116,25 +106,6 @@ function resultText(result: unknown): string {
   return blocksToText(record.content)
 }
 
-/**
- * Bound one injected block. Engram returns whole-session context with no size
- * contract, and this text is contributed to every assembly, so an unbounded
- * block would tax every request.
- */
-function boundContext(text: string | undefined, limit: number): string | undefined {
-  if (text === undefined) return undefined
-  if (text.length <= limit) return text
-  return `${text.slice(0, Math.max(0, limit - 60))}\n...[truncated by dsh-gentle-engram]`
-}
-
-/** Read the context text Engram returns, which may be a string or a wrapper. */
-function contextTextOf(response: unknown): string | undefined {
-  if (typeof response === 'string') return response.trim() || undefined
-  if (response === null || typeof response !== 'object') return undefined
-  const value = (response as Record<string, unknown>).context
-  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined
-}
-
 export function apply(ctx: PluginContext, rawConfig?: RawEngramConfig): void {
   const config = resolveConfig(rawConfig, message => ctx.logger.warn(`engram config: ${message}`))
   const client = createClient(config, ctx.logger)
@@ -153,8 +124,7 @@ export function apply(ctx: PluginContext, rawConfig?: RawEngramConfig): void {
   const closingSessions = new Set<string>()
 
   const summarize = async (state: SessionState, content: string): Promise<JsonValue> => {
-    const project = state.project?.kind === 'resolved' ? state.project.project : undefined
-    if (project === undefined) throw new Error(`Engram cannot resolve this workspace's project. ${ambiguityGuidance([])}`)
+    const project = requireProject(state)
     return archiveSummary(client, state, project, redactText(content))
   }
 
@@ -164,13 +134,12 @@ export function apply(ctx: PluginContext, rawConfig?: RawEngramConfig): void {
   ))
 
   /**
-   * Warm one session's read-only state: spawn/reuse the server, resolve the
-   * project, then cache the context block.
+   * Warm one session's read-only state: spawn/reuse the server, then resolve
+   * the project.
    *
    * This writes nothing to Engram. It is driven by an `emit` lifecycle event
    * that the harness does not await, so it races the first model step by
-   * design; the prompt provider tolerates an unwarmed cache and simply
-   * contributes the protocol until the context arrives.
+   * design.
    *
    * `state.project` doubles as the warmed marker — the resolution is cached for
    * the session's life, exactly once, and a failed server ensure leaves it
@@ -191,16 +160,16 @@ export function apply(ctx: PluginContext, rawConfig?: RawEngramConfig): void {
       state.project = resolution
       state.projectCheckedAt = Date.now()
       if (resolution.kind !== 'resolved') {
+        if (state.cwd.trim().length === 0) {
+          // No directory at all was reported, so the config-file guidance the
+          // ambiguity path gives cannot help this session.
+          ctx.logger.warn('engram: this session did not report a working directory, so Engram cannot attribute its memory to a project. Start DeepSeek Harness from inside the repository you want memory for.')
+          return
+        }
         const available = resolution.kind === 'failed' ? resolution.available : []
         ctx.logger.warn(`engram: ${ambiguityGuidance(available)}`)
         return
       }
-
-      // `sessions=-1` drops Engram's five-slot recent-sessions block: those rows
-      // are bookkeeping rather than memory, and they spend the same budget as the
-      // observations below.
-      const context = await client.bestEffort(`/context?project=${encodeURIComponent(resolution.project)}&sessions=-1`)
-      state.contextText = boundContext(contextTextOf(context), config.contextLimit)
     })().finally(() => {
       state.startup = undefined
     })
@@ -271,7 +240,16 @@ export function apply(ctx: PluginContext, rawConfig?: RawEngramConfig): void {
       state.ended = false
       await client.request('/sessions', {
         method: 'POST',
-        body: { id: state.engramSessionId, project, directory: state.cwd },
+        body: {
+          id: state.engramSessionId,
+          project,
+          directory: state.cwd,
+          // Without this the server stores the row as `shared`, and shared rows
+          // are exempt from its project-mismatch enforcement — so the
+          // per-project isolation this plugin relies on would not hold. Pi
+          // sends the same value for the same reason.
+          ownership_mode: 'project_owned',
+        },
       })
       state.registered = true
       state.registeredAt = Date.now()
@@ -340,9 +318,9 @@ export function apply(ctx: PluginContext, rawConfig?: RawEngramConfig): void {
     // The notice carries the archive outcome and nothing else. Engram can also
     // hand back this session's own recovery context (`GET /context/compaction`),
     // which used to be injected here: it re-listed the observations and prompts
-    // this session had just produced — up to ~10 KB — content the standing
-    // project block already carries. The summary is still archived above, so not
-    // reading it back loses nothing.
+    // this session had just produced — up to ~10 KB. The model can pull that
+    // content itself with `mem_context`. The summary is still archived above, so
+    // not reading it back loses nothing.
     state.pendingNotice = buildRecoveryNotice(project, undefined, outcome)
   }
 
@@ -369,7 +347,7 @@ export function apply(ctx: PluginContext, rawConfig?: RawEngramConfig): void {
     // attribute the summary to the wrong project.
     if (sessions.get(sessionId) === undefined) {
       const cwd = session.header.cwd
-      if (typeof cwd !== 'string' || cwd.length === 0) {
+      if (typeof cwd !== 'string' || cwd.trim().length === 0) {
         ctx.logger.warn(`engram: compaction for ${sessionId} arrived with no warm state and no recorded cwd; skipping the archive rather than guessing which project it belongs to`)
         return
       }
@@ -398,7 +376,10 @@ export function apply(ctx: PluginContext, rawConfig?: RawEngramConfig): void {
     await sessions.enqueue(state, async () => {
       await startState(state)
       if (!(await ensureRegistered(state))) return
-      const project = state.project?.kind === 'resolved' ? state.project.project : undefined
+      // The project comes from this session's resolution. Defence in depth:
+      // POST /prompts attributes from the body and session row, and registration
+      // already requires a resolved project, so this cannot fire today.
+      const project = requireProject(state)
       await client.bestEffort('/prompts', {
         method: 'POST',
         body: {
@@ -437,13 +418,18 @@ export function apply(ctx: PluginContext, rawConfig?: RawEngramConfig): void {
     await sessions.enqueue(state, async () => {
       await startState(state)
       if (!(await ensureRegistered(state))) return
-      const project = state.project?.kind === 'resolved' ? state.project.project : undefined
+      // Same defence-in-depth gate as capturePrompt: the project comes from
+      // this session's resolution. POST /observations/passive attributes from
+      // the body and session row, so it cannot fire once registration passed.
+      const project = requireProject(state)
       await client.bestEffort('/observations/passive', {
         method: 'POST',
         body: {
           session_id: state.engramSessionId,
           project,
-          content: redactText(text).slice(0, PASSIVE_CAPTURE_LIMIT),
+          // Already bounded and gate-approved by passivePayload, which keeps
+          // the learning header that Engram's parser needs.
+          content: redactText(text),
           source: toolName,
         },
       })
@@ -460,8 +446,11 @@ export function apply(ctx: PluginContext, rawConfig?: RawEngramConfig): void {
     if (result !== null && typeof result === 'object' && (result as { isError?: unknown }).isError === true) return
     const text = resultText(result)
     if (text.length <= 50) return
-    if (!LEARNING_SECTION.test(text)) return
-    void captureResult(sessions.ensure(agent), text, toolName).catch((error: unknown) => warnCapture(ctx.logger, 'passive capture', error))
+    // One call decides both: a returned string is the exact payload sent, and
+    // undefined means there is no learning section to extract.
+    const payload = passivePayload(text, PASSIVE_CAPTURE_LIMIT)
+    if (payload === undefined) return
+    void captureResult(sessions.ensure(agent), payload, toolName).catch((error: unknown) => warnCapture(ctx.logger, 'passive capture', error))
   }) as never)
 
   // Serial dispatch: awaiting here delays turn end until the session's writes
@@ -542,15 +531,15 @@ export function apply(ctx: PluginContext, rawConfig?: RawEngramConfig): void {
     scope.systemPrompt.context({
       name: PROTOCOL_CONTEXT_NAME,
       order: PROTOCOL_CONTEXT_ORDER,
-      // Synchronous by contract: everything expensive was cached when the
-      // session started. DSH re-projects this contribution after a surface
+      // Memory is not injected: the model pulls it on demand with
+      // `mem_context`, matching the reference Pi adapter. The protocol is the
+      // standing contribution, and the one-shot compaction notice below is the
+      // only automatic memory-related text — it is consumed here. Synchronous by
+      // contract, and DSH re-projects this contribution after a surface
       // replacement, so the protocol survives compaction without re-injection.
       text: (context: AssembleContextLike) => {
         const parts = [PROTOCOL_TEXT]
         const state = context.agent === undefined ? undefined : sessions.get(context.agent.id)
-        if (state !== undefined && state.contextText !== undefined) {
-          parts.push(`### Recovered Engram memory for this project\n\n${state.contextText}`)
-        }
         if (state?.pendingNotice !== undefined) {
           parts.push(state.pendingNotice)
           state.pendingNotice = undefined
