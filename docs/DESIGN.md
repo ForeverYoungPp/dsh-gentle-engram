@@ -105,10 +105,15 @@ Each of these has a matching comment in the code. They must keep holding.
 ## 4. Non-goals
 
 No hardcoded session summary. No regex secret scanning. No dual MCP + HTTP
-transport. No unix-socket transport yet. `mem_delete` stays unexposed: the route
-sits behind `requireAuth`, and this plugin sends no `Authorization` header — with
-`ENGRAM_HTTP_TOKEN` unset the check passes through, so the token is not the
-blocker, the missing header is. And never silently guess which project a workspace
+transport. No unix-socket transport yet. `mem_list_projects` stays unexposed
+because its handler calls the store directly and Engram serves no HTTP route for
+it. `mem_delete` was unexposed on the nominal grounds that its route sits behind
+`requireAuth`, but that reason was misread: with `ENGRAM_HTTP_TOKEN` unset the
+check passes through and the route was open all along, so the only real blocker
+was the missing `Authorization` header — and with the variable set, the delete
+route is the one operation that needs it. The transport now sends
+`Authorization: Bearer` when that variable is set, and the tool is exposed on the
+same footing as the rest. And never silently guess which project a workspace
 belongs to — that one is a safety property, not a preference.
 
 ## 5. Known residuals

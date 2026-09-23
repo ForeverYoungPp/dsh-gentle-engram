@@ -15,7 +15,7 @@
  */
 
 import { setTimeout as sleep } from 'node:timers/promises'
-import type { EngramConfig } from '../config.ts'
+import { engramAuthToken, type EngramConfig } from '../config.ts'
 import { losslessJson } from '../json.ts'
 import { redactUrlPath, redactValue } from '../redaction.ts'
 import {
@@ -107,12 +107,16 @@ export function createClient(config: EngramConfig, logger: Logger): EngramClient
 
   async function attempt(path: string, options: FetchOptions): Promise<{ response: Response } | { failure: unknown }> {
     const method = options.method ?? 'GET'
+    const token = engramAuthToken()
     const timeout = AbortSignal.timeout(config.requestTimeoutMs)
     const signal = options.signal === undefined ? timeout : AbortSignal.any([options.signal, timeout])
     try {
       const response = await fetch(`${baseUrl}${redactUrlPath(path)}`, {
         method,
-        headers: options.body === undefined ? undefined : { 'Content-Type': 'application/json' },
+        headers: options.body === undefined && token === undefined ? undefined : {
+          ...(options.body === undefined ? {} : { 'Content-Type': 'application/json' }),
+          ...(token === undefined ? {} : { Authorization: `Bearer ${token}` }),
+        },
         body: options.body === undefined ? undefined : JSON.stringify(redactValue(options.body)),
         signal,
       })

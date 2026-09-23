@@ -265,6 +265,41 @@ test('a private query value reaches fetch redacted while the URL shape is preser
   }
 })
 
+// --- Bearer token on the wire -----------------------------------------------
+
+test('a configured ENGRAM_HTTP_TOKEN reaches fetch as an Authorization: Bearer header', async () => {
+  const previous = process.env.ENGRAM_HTTP_TOKEN
+  process.env.ENGRAM_HTTP_TOKEN = 's3cret-token'
+  const stub = stubFetch(() => new Response(JSON.stringify({ id: 1 }), { status: 200 }))
+  try {
+    await client().request('/observations', { method: 'POST', body: { content: 'x' } })
+    const headers = stub.calls[0].init?.headers as Record<string, string>
+    assert.equal(headers.Authorization, 'Bearer s3cret-token')
+    assert.equal(headers['Content-Type'], 'application/json')
+  } finally {
+    stub.restore()
+    if (previous === undefined) delete process.env.ENGRAM_HTTP_TOKEN
+    else process.env.ENGRAM_HTTP_TOKEN = previous
+  }
+})
+
+test('with no ENGRAM_HTTP_TOKEN the request carries no Authorization header', async () => {
+  const previous = process.env.ENGRAM_HTTP_TOKEN
+  delete process.env.ENGRAM_HTTP_TOKEN
+  const stub = stubFetch(() => new Response(JSON.stringify({ id: 1 }), { status: 200 }))
+  try {
+    await client().request('/observations', { method: 'POST', body: { content: 'x' } })
+    const headers = stub.calls[0].init?.headers as Record<string, string>
+    assert.ok(!Object.hasOwn(headers, 'Authorization'))
+    // A token-free body request is otherwise unchanged.
+    assert.deepEqual(headers, { 'Content-Type': 'application/json' })
+  } finally {
+    stub.restore()
+    if (previous !== undefined) process.env.ENGRAM_HTTP_TOKEN = previous
+    else delete process.env.ENGRAM_HTTP_TOKEN
+  }
+})
+
 // --- Lossless JSON on the transport funnel ----------------------------------
 
 test('a server payload carrying a negative zero reaches the caller normalized', async () => {

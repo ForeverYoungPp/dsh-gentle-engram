@@ -85,21 +85,23 @@ Set on the inserted row in your profile (or the host patch layer):
         capturePrompts: true
 ```
 
-Environment variables (same names as the upstream Pi adapter):
+Environment variables (the first three share the upstream Pi adapter's names; `ENGRAM_HTTP_TOKEN`
+is Engram's own):
 
 | Variable | Effect |
 | --- | --- |
 | `ENGRAM_URL` | Use an already-running server. The plugin then never spawns or restarts one, and skips the ownership check. |
 | `ENGRAM_BIN` | Engram executable path. |
 | `ENGRAM_PORT` | Port for the implicitly owned server (default 7437). |
+| `ENGRAM_HTTP_TOKEN` | Bearer token for a token-protected Engram server. Every request the plugin sends to the Engram API carries `Authorization: Bearer <token>`; the `/health` ownership probe is the one exception, and Engram leaves that route open. Read per request, so changing it needs no restart. Leave it unset for the zero-config default (no header, server open). |
 
 ## Tools
 
-Twenty native tools, matching Engram's `agent` MCP profile except where noted:
+Twenty-one native tools, matching Engram's `agent` MCP profile except where noted:
 
 `mem_save`, `mem_search`, `mem_context`, `mem_stats`, `mem_timeline`,
 `mem_session_summary`, `mem_session_start`, `mem_session_end`, `mem_get_observation`,
-`mem_suggest_topic_key`, `mem_capture_passive`, `mem_save_prompt`, `mem_update`,
+`mem_suggest_topic_key`, `mem_capture_passive`, `mem_save_prompt`, `mem_update`, `mem_delete`,
 `mem_current_project`, `mem_judge`, `mem_compare`, `mem_doctor`, `mem_review`, `mem_pin`,
 `mem_unpin`.
 
@@ -108,17 +110,20 @@ this session's resolved project. Cross-project reads (`all_projects: true`, also
 `mem_stats` and `mem_review list`) are explicit-only: the plugin never falls back to them
 automatically.
 
-Three deliberate differences from the MCP originals:
+Two deliberate differences from the MCP originals:
 
 - **`mem_list_projects` is absent.** Its handler calls the store directly and Engram exposes
   no HTTP route for it. Use `mem_search` with `all_projects: true` instead.
-- **`mem_delete` is absent.** The plugin sends no `Authorization` header, so the route's
-  `requireAuth` check would reject it in an installation that sets `ENGRAM_HTTP_TOKEN`
-  (with that token unset the server allows open access, so the route itself is not the
-  blocker). The tool stays unexposed by decision.
 - **`mem_session_start` / `mem_session_end` take no model-supplied session id.** Session
   identity belongs to the plugin; letting the model mint keys would desynchronise every
   later capture.
+
+One transport difference from the upstream Pi adapter: this plugin sends
+`Authorization: Bearer $ENGRAM_HTTP_TOKEN` when that variable is set. Engram guards
+`DELETE /observations/{id}`, `DELETE /prompts/{id}`, `DELETE /sessions/{id}`, `GET /export` and
+`POST /import` with `requireAuth` and leaves every other route open, so without the header
+`mem_delete` would be the one exposed tool that fails on a token-protected server. With the
+variable unset the header is omitted and Engram's zero-config default applies.
 
 ## Multi-repository workspaces
 

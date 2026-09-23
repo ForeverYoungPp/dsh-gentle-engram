@@ -66,6 +66,20 @@ function envPort(): number | undefined {
   return Number.isSafeInteger(parsed) && parsed > 0 && parsed <= 65_535 ? parsed : undefined
 }
 
+/**
+ * Bearer token for a token-protected Engram server (`ENGRAM_HTTP_TOKEN`).
+ *
+ * Read on every call, exactly as the server reads it, so a token that appears
+ * or disappears needs no restart. Deliberately NOT trimmed like the other
+ * environment values: the server compares this string byte-for-byte, so a
+ * trimmed copy would authenticate as a different token. Only the empty string
+ * counts as unset, mirroring the server's own `os.Getenv(...) == ""` check.
+ */
+export function engramAuthToken(): string | undefined {
+  const value = process.env.ENGRAM_HTTP_TOKEN
+  return value !== undefined && value.length > 0 ? value : undefined
+}
+
 /** Keep an override only when it is the right primitive and finite. */
 function pickNumber(raw: unknown, fallback: number, min: number, max: number): number {
   if (typeof raw !== 'number' || !Number.isFinite(raw)) return fallback

@@ -3,11 +3,10 @@
  *
  * These replace the `mcp__engram__mem_*` rows this plugin used to depend on.
  * The set is Engram's `agent` MCP profile minus `mem_list_projects`, which has
- * no HTTP route (its handler calls the store directly). `mem_delete` is
- * deliberately absent too: this plugin sends no `Authorization` header, so the
- * route's `requireAuth` check would reject it in an installation that sets
- * `ENGRAM_HTTP_TOKEN` (an unset token leaves the server open, so the route is
- * not the blocker). The tool stays unexposed by decision.
+ * no HTTP route (its handler calls the store directly). `mem_delete` is now
+ * exposed: the transport sends `Authorization: Bearer` whenever
+ * `ENGRAM_HTTP_TOKEN` is set, which is what makes the delete route reachable in
+ * a token-protected install.
  *
  * Two signatures deviate from the MCP originals. `mem_session_start` and
  * `mem_session_end` take no model-supplied id: session identity is owned by
@@ -458,6 +457,18 @@ export function registerTools(
         signal: exec.signal,
         body: { title: args.title, content: args.content, type: args.type, scope: args.scope, topic_key: args.topic_key },
       }),
+  }))
+
+  add(defineTool({
+    name: 'mem_delete',
+    description: 'Delete a memory by id. Soft delete by default: the row is tombstoned and stops appearing in searches. Pass hard_delete to remove it permanently. Deleting an id that does not exist is reported as an error, not as a silent success.',
+    parameters: {
+      id: requiredNumber('Observation id to delete'),
+      hard_delete: optionalBoolean('Remove the row permanently instead of tombstoning it'),
+    },
+    output: ENGRAM_OUTPUT,
+    execute: async (args, exec) =>
+      deps.client.request(`/observations/${encodeURIComponent(String(args.id))}${queryString({ hard: args.hard_delete })}`, { method: 'DELETE', signal: exec.signal }),
   }))
 
   add(defineTool({

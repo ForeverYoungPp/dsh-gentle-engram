@@ -132,7 +132,7 @@ pi 不等外部服务，自己拉起 `engram serve`（`index.ts:543-761`；`spaw
 | `pi.on('before_agent_start')` 返回增强 systemPrompt | `systemPrompt.context({name, order, text: (ctx) => string})` | 见下方 (a) |
 | `pi.on('tool_execution_end')` | `ctx.on('tools/result')` | 同为观察型（emit、失败被吞），选它做 passive 捕获正确 |
 | `pi.on('session_shutdown')` | `ctx.on('agent/disposed')` | **fire-and-forget**，且 `store.delete` 在 emit 之前 → 只清本地状态，不做必须落盘的写 |
-| `pi.registerTool(...)` + typebox | `ctx.tools.register(defineTool({...}))` | DSH 的 `output` 是**运行时强制**的；20 个工具共用一个 `ENGRAM_OUTPUT`；任意 JSON 用 `{type:'json'}` 逃逸口 |
+| `pi.registerTool(...)` + typebox | `ctx.tools.register(defineTool({...}))` | DSH 的 `output` 是**运行时强制**的；21 个工具共用一个 `ENGRAM_OUTPUT`；任意 JSON 用 `{type:'json'}` 逃逸口 |
 | `renderCall`/`renderResult` | `presentCall`/`presentResult` | 见下方 (d) |
 | `ctx.ui.setStatus('engram', '🧠 …')` | `ctx.logger` + `presentResult` | DSH 没有全局状态栏 |
 | `ENGRAM_URL`/`ENGRAM_BIN`/`ENGRAM_PORT` | 同 | 直接沿用上游环境变量约定 |
@@ -197,7 +197,7 @@ pi 的 `index.ts:763-767`（`project` / `directory` / `pendingRecoveryNotice` / 
 
 | pi 的能力 | 为什么 DSH 没有 |
 | --- | --- |
-| `mem_list_projects` | 直接调 `store.ListProjectsWithStats()`，**HTTP 无路由**（`mcp.go:1029-1047`）→ 工具面 20 个而非 22 |
+| `mem_list_projects` | 直接调 `store.ListProjectsWithStats()`，**HTTP 无路由**（`mcp.go:1029-1047`）→ 工具面 21 个而非 22 |
 | `mem_pin` / `mem_unpin` | pi 0.1.14 的 22 工具集已含这两个（`index.ts:35-56`），handler 在 `index.ts:1373-1376`，但它是裸 `fetch(PUT/DELETE /observations/{id}/pin)`，与我们的 `EngramClient` 传输层形状不同——HTTP 接线无先例可直接抄 |
 | `/review` 的 UI 化呈现 | DSH 没有 Pi 的 TUI 组件模型，降级为 `presentResult` 文本 |
 | `pi-mcp-adapter` 集成 | DSH 有自己的 mcp-client；本方案不用 MCP |
@@ -209,10 +209,11 @@ pi 的 `index.ts:763-767`（`project` / `directory` / `pendingRecoveryNotice` / 
 
 1. **项目解析状态按会话隔离**（§5）。
 2. **按 session 过滤压缩事件 + 重入保护**——**修正第一版**：压缩事件确实广播（`scope/src/index.ts:170-185` 无 scope tag 时 `return true`），但**广播 ≠ 重复**：一个监听器每个事件只跑一次，两次压缩是两个不同 `compactionId`、两次合法归档。而且 resume/replay **根本不重发**（`session/src/index.ts:474-486`："constructor seeds do not emit"）。所以真正必需的是 (i) 忽略未追踪 session 的事件，(ii) 防止第二次压缩在第一次归档**在飞时**重入；per-session `lastCompactionId` 作为廉价幂等守卫保留，但理由要写对。
-3. **工具面缩减为 20 个**并显式记录 `mem_list_projects` 缺失。
+3. **工具面为 21 个**并显式记录 `mem_list_projects` 缺失（唯一缺失项；`mem_delete` 已补上，见下一项）。
 4. **服务器生命周期主体移植 pi §2.1**（共享 deadline / 只有 ready 算有服务 / 宽限 re-probe / `sharedInitialization` 退避窗口 / 代级恢复），**只从 `mcp-client/src/connection.ts` 借纪律**：generation 所有权、指数退避、定时器 `.unref()`、`dispose()` 等静止。
    **修正第一版**：第一版说"照 connection.ts 做监督器"是**退步**——connection.ts 需要 reconnect 循环，是因为 stdio 是**有状态长连接**（进程死是可观测事件，且已注册工具在 re-sync 前全部失效）；而 HTTP + 独立 serve **没有可丢的长连接**，失败只能按请求逐个观测，服务还可能被外部拥有（pi 已经在跑同一个）。正确形态是**请求级重试 + 显式 readiness 探测 + refused 时的有界重启**。
 5. **`.engram/config.json` 引导**——DSH 常见从多仓库父目录启动，歧义是高频路径而非边缘情况。
+6. **请求带 `Authorization: Bearer $ENGRAM_HTTP_TOKEN`**（pi 完全不发这个头）。Engram 的 `requireAuth` 只包了 5 条路由（`DELETE /observations/{id}`、`DELETE /prompts/{id}`、`DELETE /sessions/{id}`、`GET /export`、`POST /import`），未设该变量时直接放行——所以 pi 侧 `mem_delete` 在默认安装下能跑、在 token 安装下必然 401。本插件按请求读该变量并发头，两种安装都可用；变量未设时不发头，零配置行为不变。
 
 ---
 

@@ -7,6 +7,7 @@ import { test } from 'node:test'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 
 import { resolveConfig } from './config.ts'
+import type { FetchOptions } from './engram/client.ts'
 import { EngramHttpError } from './engram/errors.ts'
 import { resolveProject } from './engram/project.ts'
 import { createSessionRegistry, type SessionState } from './session.ts'
@@ -23,6 +24,7 @@ import * as tools from './tools.ts'
 interface Harness {
   readonly definitions: Map<string, ToolDefinition>
   readonly requests: string[]
+  readonly methods: string[]
   readonly client: tools.ToolDeps['client']
   readonly state: SessionState
 }
@@ -34,11 +36,13 @@ interface Harness {
  */
 function harness(headerCwd: string | null = '/repo', onRequest?: (path: string) => Promise<unknown>): Harness {
   const requests: string[] = []
+  const methods: string[] = []
   const sessions = createSessionRegistry({ info() {}, warn() {} })
   const client: tools.ToolDeps['client'] = {
     baseUrl: 'http://127.0.0.1:7437',
-    request: async <T>(path: string): Promise<T | null> => {
+    request: async <T>(path: string, options?: FetchOptions): Promise<T | null> => {
       requests.push(path)
+      methods.push(options?.method ?? 'GET')
       if (onRequest !== undefined) return await onRequest(path) as T | null
       return null
     },
@@ -62,7 +66,7 @@ function harness(headerCwd: string | null = '/repo', onRequest?: (path: string) 
     return () => {}
   }, deps)
   const agent = { id: 'session-a', session: { header: headerCwd === null ? {} : { cwd: headerCwd } } }
-  return { definitions, requests, client, state: sessions.ensure(agent) }
+  return { definitions, requests, methods, client, state: sessions.ensure(agent) }
 }
 
 /** Invoke one registered definition the way the registry would. */
@@ -337,6 +341,34 @@ test('mem_current_project refuses a relative cwd and issues no request', async (
   const h = harness()
   await assert.rejects(() => call(h, 'mem_current_project', { cwd: 'sibling/repo' }), /absolute path/)
   assert.equal(h.requests.length, 0)
+})
+
+test('mem_delete sends DELETE /observations/<id>?hard=true when hard_delete is true', async () => {
+  const h = harness()
+  await call(h, 'mem_delete', { id: 42, hard_delete: true })
+  assert.deepEqual(h.methods, ['DELETE'])
+  assert.equal(h.requests.length, 1)
+  assert.equal(h.requests[0], '/observations/42?hard=true')
+})
+
+test('mem_delete sends DELETE /observations/<id> with no query string when hard_delete is omitted', async () => {
+  const h = harness()
+  await call(h, 'mem_delete', { id: 42 })
+  assert.deepEqual(h.methods, ['DELETE'])
+  assert.equal(h.requests.length, 1)
+  assert.equal(h.requests[0], '/observations/42')
+})
+
+test('mem_delete surfaces a server error instead of reporting a deleted memory', async () => {
+  const h = harness('/repo', async () => {
+    throw new EngramHttpError('observation not found', 404, { error: 'observation not found' })
+  })
+  await assert.rejects(() => call(h, 'mem_delete', { id: 999_999_999 }), (error: unknown) => {
+    assert.ok(error instanceof EngramHttpError, 'a failed delete must not resolve')
+    assert.equal(error.status, 404)
+    assert.match(error.message, /observation not found/)
+    return true
+  })
 })
 
 test('no registered tool declares a project parameter', () => {
