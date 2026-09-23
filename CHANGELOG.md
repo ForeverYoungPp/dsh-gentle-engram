@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/ForeverYoungPp/dsh-gentle-engram/compare/v0.4.1...v0.5.0) (2026-09-23)
+
+
+### Features
+
+* **tools:** expose mem_delete and send the Engram bearer token ([730212b](https://github.com/ForeverYoungPp/dsh-gentle-engram/commit/730212b5bfe7a7fec6ecfdd6ee7b0307b51f9d09))
+
 ## [0.4.1](https://github.com/ForeverYoungPp/dsh-gentle-engram/compare/v0.4.0...v0.4.1) (2026-09-22)
 
 
