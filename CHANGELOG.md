@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/ForeverYoungPp/dsh-gentle-engram/compare/v0.6.0...v0.6.1) (2026-09-24)
+
+
+### Bug Fixes
+
+* **transport:** hold the event loop through a retry backoff ([b09745d](https://github.com/ForeverYoungPp/dsh-gentle-engram/commit/b09745df461637602bab5f21081a622969c65d9d))
+
 ## [0.6.0](https://github.com/ForeverYoungPp/dsh-gentle-engram/compare/v0.5.0...v0.6.0) (2026-09-24)
 
 
