@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
 import { test } from 'node:test'
 
 import { resolveConfig, type RawEngramConfig } from '../config.ts'
@@ -354,4 +355,41 @@ test('probeHealth maps an unrecognized transport failure to indeterminate', asyn
   } finally {
     stub.restore()
   }
+})
+
+/**
+ * The retry backoff must hold the event loop.
+ *
+ * `sleep(ms, undefined, { ref: false })` does not, so a process with nothing
+ * else pending exits while the awaited retry is still in flight — which is what
+ * made CI report 30 `cancelledByParent` tests. An in-process assertion cannot
+ * observe this: the test runner itself holds handles. So the check runs in a
+ * child process whose only pending work is the retry, and it fails if that child
+ * exits without settling.
+ */
+test('a retry backoff survives an otherwise empty event loop', () => {
+  const script = `
+    globalThis.fetch = async () => {
+      const error = new Error('connect ECONNREFUSED 127.0.0.1:7437')
+      error.code = 'ECONNREFUSED'
+      throw error
+    }
+    const { resolveConfig } = await import(${JSON.stringify(new URL('../config.ts', import.meta.url).href)})
+    const { createClient } = await import(${JSON.stringify(new URL('./client.ts', import.meta.url).href)})
+    const { isConnectionRefusedError } = await import(${JSON.stringify(new URL('./errors.ts', import.meta.url).href)})
+    const client = createClient({ ...resolveConfig(undefined, () => {}), fetchMaxAttempts: 2 }, { info() {}, warn() {} })
+    try {
+      await client.request('/observations')
+      console.log('resolved')
+    } catch (error) {
+      console.log(isConnectionRefusedError(error) ? 'refused' : 'other:' + name)
+    }
+  `
+  const child = spawnSync(process.execPath, ['--input-type=module', '-e', script], { encoding: 'utf8' })
+  assert.equal(
+    child.status,
+    0,
+    `the child exited ${String(child.status)} without settling the awaited retry: ${child.stderr}`,
+  )
+  assert.equal(child.stdout.trim(), 'refused', 'the retry must settle with the transport failure it observed')
 })

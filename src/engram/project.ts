@@ -135,7 +135,10 @@ export async function resolveProject(client: EngramClient, cwd: string): Promise
         const detail = error instanceof Error ? error.message : String(error)
         return { kind: 'failed', reason: detail, available: [] }
       }
-      await sleep(PROJECT_DETECTION_RETRY_MS, undefined, { ref: false })
+      // Held rather than unref'd, for the same reason as the client's retry
+      // backoff: the caller is awaiting this detection, and the wait is the
+      // only thing that can settle it.
+      await sleep(PROJECT_DETECTION_RETRY_MS)
       continue
     }
 

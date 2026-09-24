@@ -174,7 +174,11 @@ export function createClient(config: EngramConfig, logger: Logger): EngramClient
       if (!isSafeToReplay(path, method) || attemptIndex === config.fetchMaxAttempts - 1) {
         throw error
       }
-      await sleep(250 * 2 ** attemptIndex, undefined, { ref: false })
+      // Holding the loop here is deliberate. The caller is awaiting this
+      // request, and the backoff is the only thing that can settle it, so an
+      // unref'd timer would let a process with nothing else pending exit
+      // mid-retry and abandon an operation that is still in flight.
+      await sleep(250 * 2 ** attemptIndex)
     }
     throw new EngramTimeoutError(`Engram request to ${redactUrlPath(path)} exhausted its attempts`)
   }

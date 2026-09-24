@@ -167,6 +167,10 @@ export function createSessionRegistry(logger: Logger): SessionRegistry {
       while (state.pending > 0) {
         const remaining = deadline - Date.now()
         if (remaining <= 0) return
+        // This sleep is unref'd on purpose, unlike the client's retry backoff:
+        // it is a deadline racing a branch that can settle on its own, it runs
+        // at a turn boundary during teardown, and a plugin timer must not delay
+        // the host's exit.
         await Promise.race([state.tail, sleep(remaining, undefined, { ref: false })])
       }
     },
