@@ -329,7 +329,7 @@ export function registerTools(
 
   add(defineTool({
     name: 'mem_session_end',
-    description: 'Mark this Engram session as completed, with an optional summary. The plugin closes sessions on its own; call this only when the user explicitly ends the work. A later memory write starts a new Engram session instead of reopening this one.',
+    description: 'Mark this Engram session as completed, with an optional summary. This is the only thing that ends a session: the plugin deliberately leaves the row open when an agent goes away, so that a resumed session keeps its binding. A later memory write starts a new Engram session instead of reopening this one.',
     parameters: {
       summary: optionalString('Summary of what was accomplished'),
     },
@@ -350,11 +350,9 @@ export function registerTools(
         // cached registration so the next write re-creates it instead of
         // trusting a row Engram no longer has.
         state.registered = false
-        state.ended = false
         return { ended: false, session_id: sessionId, note: 'No Engram session existed for this session yet, so there was nothing to end.' }
       }
       if (endedAtOf(row) !== null) {
-        state.ended = true
         state.registered = false
         return { ended: false, session_id: sessionId, note: 'This Engram session had already ended; its summary and end time were left untouched.' }
       }
@@ -369,10 +367,9 @@ export function registerTools(
           body: { summary: args.summary === undefined ? '' : redactText(args.summary) },
         }),
       )
-      // The row is closed for good. Drop the local registration so the next
-      // write rotates to a fresh Engram session (registerSession) instead of
-      // filing memories under a session that has already ended.
-      state.ended = true
+      // The row is closed for good, and Engram can never reopen it. Drop the
+      // local registration so the next write detects the ended row and starts a
+      // fresh Engram session instead of filing memories under this one.
       state.registered = false
       return ended
     },

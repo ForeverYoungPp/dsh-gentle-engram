@@ -79,24 +79,33 @@ Each of these has a matching comment in the code. They must keep holding.
   refused rather than adopted: a process that merely holds the port is not ours
   to trust. `ENGRAM_URL` is the explicit opt-out, and an explicitly chosen
   server is used as given, with no identity check.
-- **Session identity is the agent id.** A resumed session keeps its Engram
-  binding; a fresh key is minted only once the current row has ended.
+- **Session identity is the agent id, and it survives resume.** The Engram key is
+  the harness agent id for the session's whole life, across `resume` and a plugin
+  reload, so one DSH session keeps one Engram row. It is replaced only when Engram
+  proves the key is unusable: `409 session_already_ended` (an ended row is terminal
+  and can never be reopened) or `409 session_project_conflict` (a `project_owned`
+  row is pinned to its project). Both rotate once and retry.
+- **Liveness is Engram's runtime lease, not `ended_at`.** `POST /sessions` is
+  create-or-renew and every write refreshes the 30-minute lease the server keeps
+  on the row. A lapsed lease does not end or invalidate anything - it only stops
+  the row from being offered as a live candidate when another writer omits a
+  session id - and the next write renews it. Disposal therefore writes nothing.
 - **Registration is deferred to the first write.** Reading memory must not leave a
   session row behind: Engram injects a fixed five-slot recent-sessions block, and
   rows belonging to agents that never produced memory crowd out real sessions.
 - **A failed project resolution expires.** A resolved project is final for the
   session; a failure is retried after 30s, so adding `.engram/config.json` to an
   ambiguous workspace takes effect without a restart.
-- **A session row ends in exactly two places.** `mem_session_end`, when the model
-  says the work is over, and `agent/disposed`, which closes this plugin's own row
-  best-effort. Engram never expires a row by itself, so without the second path an
-  open row accumulates per run — and the doctor's *ambiguous active runtime
-  sessions* check counts precisely those rows, which makes every CLI write that
-  omits a session id fail closed. Only this plugin's own row is ever closed.
-  Ending is one-way: Engram's create route does not clear `ended_at`, so a session
-  that is used again gets a new key rather than reopening the old row.
-- **One write queue per session**, with the close queued behind it so that nothing
-  lands after the row ends.
+- **A session row ends in exactly one place.** `mem_session_end`, when the model or
+  the user says the work is over. `agent/disposed` deliberately does **not** end the
+  row: `ended_at` is terminal in Engram, so ending there would destroy the binding a
+  resumed session needs under the same agent id, and the lease already bounds the
+  row's life as a resolution candidate. Ending is one-way, so a session that
+  produces memory after an explicit end gets a new key rather than reopening the old
+  row. Only this plugin's own row is ever ended.
+- **One write queue per session.** Work already queued when an agent is disposed
+  keeps its own reference to the session state, so it still lands; disposal only
+  drops the map entry.
 - **Redaction is explicit `<private>` blocks only**, applied recursively to every
   outbound string and URL query value. It is a convention, not a secret scanner:
   regex-guessing credentials was tried in 0.1.x and both missed real secrets and
@@ -118,28 +127,38 @@ belongs to — that one is a safety property, not a preference.
 
 ## 5. Known residuals
 
-- **A hard process exit can drop the close request.** DSH does not await
-  `agent/disposed` listeners, and Cordis dispose is single-shot, so no plugin-side
-  hook can flush a pending request. The close is therefore best-effort: an abrupt
-  kill can leave one row open. Nothing is lost — the memory was written earlier —
-  the row simply stays counted until it ages out of the check's activity window.
-- **A resume racing the queued close at sub-second granularity cannot be
-  reproduced by hand.** The guard that prevents it is covered by an
-  independent-process harness with a negative control, and the DSH contract that
-  fires the relevant event is verified in DSH's source. If the guard ever loses the
-  race, the outcome is a session-key rotation, not lost memory.
-- **The closing marker is process-local**, so a hot reload clears it. The agent-id
-  fallback still covers the common case, where the key never rotated.
+- **The row is never ended by the plugin, so it stays `ended_at IS NULL`.** Engram
+  drops a row from omitted-session resolution as soon as its 30-minute lease
+  lapses — the legacy activity window applies only to rows that carry no lease at
+  all — so an abandoned row stops being a resolution candidate on its own. It
+  remains in listings without an end time, which is the deliberate trade for
+  keeping a resumed session on its own row.
+- **A key that had to rotate is not recoverable after a reload.** Rotation is
+  process-local state, so a session that ended explicitly (or changed project) and
+  is then reloaded starts from the agent id again, finds that row ended, and mints
+  another key. The session's observations stay recallable by project; only the
+  session grouping splits across two rows.
+- **A hard process exit writes nothing**, which is now the intended behaviour
+  rather than a dropped close: there is no close to drop.
+- **The registration TTL is a 60s window.** A row ended behind the plugin's back
+  can still receive a write for up to a minute. Engram accepts writes to an ended
+  row, so the memory lands under the session that just ended rather than being
+  rejected; the next renewal detects it and rotates. Narrowing the window would
+  mean a registration round trip per write.
 
 ## 6. Verification status
 
 Exercised end to end: real compaction archiving and its four-way outcome
 guidance, binding across a restart, hot reload, read/write round trip, prompt
-end-then-rotate, the close on disposal, a cold start that spawns its own server,
-and the three `timers/promises` sleeps on their real call paths.
+end-then-rotate, session registration and its two rotation cases, disposal
+writing nothing, a resume keeping the key, a cold start that spawns its own
+server, and the three `timers/promises` sleeps on their real call paths.
 
-Not exercised: a real DSH resume, because DSH does not expose that operation, and
-the sub-second ordering described above.
+Not exercised: a real DSH resume, because DSH does not expose that operation; the
+subscribe-level resume path is covered by driving the plugin's own event
+listeners against a stubbed server instead. The sub-second disposal/resume
+ordering is covered at the state level (a released state never registers), not by
+racing a real resume.
 
 Contracts were verified against the DSH source tree and against Engram's HTTP
 routes and store behaviour. Both move, so this record cites behaviours rather than

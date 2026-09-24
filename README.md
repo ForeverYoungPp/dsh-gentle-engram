@@ -28,7 +28,7 @@ recall          pull project memory on demand with mem_context / mem_search
 first write     create the Engram session row, then attribute the write to it
 every turn      capture the user prompt, and any tool result carrying a Key Learnings section
 compaction      archive the summary, then inject outcome-specific recovery guidance
-disposal        close the session row, best-effort and without a summary
+disposal        release local state; the Engram row stays open and reusable
 ```
 
 Memory is **pull-based**. The static protocol is injected on every request, and project
@@ -167,19 +167,30 @@ receives outcome-specific guidance with four possible states:
 
 ## Session identity
 
-The Engram session key is the harness agent id, so a resumed session keeps its binding.
-Disposal closes the plugin's own session row, best-effort and without a summary. Engram never
-expires a row by itself, so leaving it open would accumulate one row per session the plugin
-ever ran - and the doctor's *ambiguous active runtime sessions* check counts exactly those
-rows. `mem_session_summary` remains the model's job under the session-close protocol.
+The Engram session key is the harness agent id, and it survives `resume` and a plugin reload, so
+one DSH session keeps one Engram row - unless that key had to be replaced (see below), in which case
+a later reload starts from the agent id again and may mint another row.
 
-If the model does call `mem_session_end`, the next write detects it and starts a **new** Engram
-session instead of filing memories under a closed one. Ending is therefore not a dead end: the
-closed row keeps its own end time and summary, and work that continues gets a fresh session row.
+Liveness is Engram's own **runtime lease**: `POST /sessions` is create-or-renew, and write activity
+refreshes the 30-minute lease the server keeps on the row, at most once a minute. A lapsed lease
+changes nothing about the session - it only stops the row from being offered as a live candidate
+when some other writer omits a session id - and the next write renews it. Disposal therefore
+releases local state and writes nothing: ending the row here would be terminal, and Engram can
+never reopen it.
 
-A row that disappears or is closed behind the plugin's back (`engram delete session`, the CLI)
-is handled by the same check, re-run at most once a minute: the row is re-created, or replaced
-if it had ended. The plugin does not trust a registration it confirmed an hour ago.
+Ending is reserved for `mem_session_end`, where the model or the user declares the work over. It
+is the only thing that sets `ended_at`, and the only exit from the key: the next write detects the
+ended row, mints a fresh key, and files the memory under a **new** Engram session rather than
+reopening the closed one. Work that continues after an explicit end is not lost, and the closed
+row keeps its own end time and summary.
+
+A row that disappears or is closed behind the plugin's back (`engram delete session`, the CLI) is
+handled by the same re-registration, re-run at most once a minute: the row is re-created, or
+replaced if it had ended. Engram answers a re-registration on an ended row with
+`409 session_already_ended`, and a key whose persisted project differs with
+`409 session_project_conflict`; both mean the key cannot carry this session any further, so the
+plugin rotates once and retries. Any other failure is treated as transient and leaves a session
+that was already working alone. The plugin does not trust a registration it confirmed a minute ago.
 
 Registration is **lazy**: the row is created by the first thing that actually produces
 memory — a `mem_*` write, a captured prompt, a captured tool result, or a compaction

@@ -60,12 +60,14 @@ export interface SessionState {
    */
   registeredAt: number
   /**
-   * Whether `mem_session_end` closed that row.
+   * Whether this incarnation was released by `agent/disposed`.
    *
-   * The next write then rotates to a fresh Engram session key instead of
-   * filing memories under a session that has already ended.
+   * A released state must never register: its agent is gone, and a resume is a
+   * different state object for the same id, so refusing here cannot block the
+   * incarnation that took over. Keyed on the state rather than on the agent id
+   * so a resume cannot re-arm the dead incarnation's queued work.
    */
-  ended: boolean
+  released: boolean
   /** In-flight registration, so concurrent callers share one request. */
   registration: Promise<void> | undefined
   /**
@@ -129,7 +131,7 @@ export function createSessionRegistry(logger: Logger): SessionRegistry {
         pendingNotice: undefined,
         registered: false,
         registeredAt: 0,
-        ended: false,
+        released: false,
         registration: undefined,
         startup: undefined,
         tail: Promise.resolve(),
