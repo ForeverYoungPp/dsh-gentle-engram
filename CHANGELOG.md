@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/ForeverYoungPp/dsh-gentle-engram/compare/v0.5.0...v0.6.0) (2026-09-24)
+
+
+### Features
+
+* **session:** keep one Engram row per session via the runtime lease ([0a594a5](https://github.com/ForeverYoungPp/dsh-gentle-engram/commit/0a594a5c2eedcf65b563fdd8274c45308d2439ed))
+
 ## [0.5.0](https://github.com/ForeverYoungPp/dsh-gentle-engram/compare/v0.4.1...v0.5.0) (2026-09-23)
 
 
