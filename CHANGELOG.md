@@ -1,6 +1,31 @@
 # Changelog
 
+## [0.7.1](https://github.com/ForeverYoungPp/dsh-gentle-engram/compare/v0.6.1...v0.7.1) (2026-10-01)
+
+The first release to reach the registry since 0.6.1. It carries the DeepSeek
+Harness 0.2.0 compatibility work described under 0.7.0 below as well as the
+config standardization here.
+
+
+### Features
+
+* **config:** declare the plugin configuration as an exported schemastery `Config` that cordis validates before `apply` runs. `RawEngramConfig`, `DEFAULT_CONFIG`, the `pick*` fallback helpers and the unknown-key warning are gone; an out-of-range or wrong-typed value, an unknown key, or a malformed `ENGRAM_*` environment value now fails the plugin load with a named error instead of silently falling back to a default.
+
+
+### Bug Fixes
+
+* **types:** type the Cordis surface from the harness instead of hand-declared copies, so a harness rename such as `agent/session-start` to `agent/created` fails `pnpm run typecheck` instead of compiling silently.
+
+
+### BREAKING CHANGES
+
+* Invalid or unknown plugin configuration now fails the plugin load instead of falling back to defaults.
+
 ## [0.7.0](https://github.com/ForeverYoungPp/dsh-gentle-engram/compare/v0.6.1...v0.7.0) (2026-09-30)
+
+**Prepared and staged on npm, but never published**: 0.7.1 is the first release to
+reach the registry since 0.6.1, and it carries this fix. The version number stays
+spent so no later release reuses it.
 
 DeepSeek Harness 0.2.0 support. The harness renamed its agent-lifecycle event, so
 the plugin now requires 0.2.0-rc.2 or later and no longer supports the 0.1.x line.
