@@ -20,13 +20,14 @@ import { isAbsolute } from 'node:path'
 
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { defineTool, type ToolRunContext } from '@deepseek-ai/dsh-tools'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { EngramConfig } from './config.ts'
 import type { EngramClient, Logger } from './engram/client.ts'
 import { EngramHttpError } from './engram/errors.ts'
 import { ambiguityGuidance, type ProjectResolution } from './engram/project.ts'
 import type { JsonValue } from './json.ts'
 import { redactText } from './redaction.ts'
-import type { SessionAgent, SessionRegistry, SessionState } from './session.ts'
+import type { SessionRegistry, SessionState } from './session.ts'
 
 /** Everything a tool implementation needs. */
 export interface ToolDeps {
@@ -42,7 +43,7 @@ export interface ToolDeps {
    * after a hot reload replaced this plugin instance and its empty registry —
    * still works instead of failing.
    */
-  readonly startSession: (agent: SessionAgent) => Promise<void>
+  readonly startSession: (agent: Agent) => Promise<void>
   /**
    * Ensure the Engram session row exists, creating it on first use.
    *
@@ -125,7 +126,7 @@ function endedAtOf(row: JsonValue): JsonValue {
  * gives the plugin a fresh empty registry while the agent is still running.
  */
 async function sessionFor(exec: ToolRunContext, deps: ToolDeps): Promise<SessionState> {
-  const agent = exec.agent as SessionAgent | undefined
+  const agent = exec.agent
   if (agent === undefined) throw new Error('Engram memory tools require an agent session')
   const state = deps.sessions.ensure(agent)
   await deps.startSession(agent)

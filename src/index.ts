@@ -10,6 +10,15 @@
  * @module dsh-gentle-engram
  */
 
+import type { Context } from '@deepseek-ai/cordis'
+// Type-only imports of the capability packages: each one's declaration merge
+// (Context.tools/systemPrompt, agent/* and session/* events, the compaction
+// members of SessionEventMap) has to be in the program for the real harness
+// contract to type `ctx.on` and `ctx.inject` below.
+import type { Agent } from '@deepseek-ai/dsh-agent'
+import type {} from '@deepseek-ai/dsh-tools'
+import type {} from '@deepseek-ai/dsh-session'
+import type {} from '@deepseek-ai/dsh-compaction'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { resolveConfig, type RawEngramConfig } from './config.ts'
 import {
@@ -22,47 +31,18 @@ import {
   PASSIVE_CAPTURE_LIMIT,
   warnCapture,
 } from './capture.ts'
-import { createClient, type Logger } from './engram/client.ts'
+import { createClient } from './engram/client.ts'
 import { ambiguityGuidance, resolveProject } from './engram/project.ts'
 import { createServerManager } from './engram/server.ts'
 import type { JsonValue } from './json.ts'
 import { PROTOCOL_CONTEXT_NAME, PROTOCOL_CONTEXT_ORDER, PROTOCOL_TEXT } from './protocol.ts'
 import { redactText } from './redaction.ts'
 import { createRegistration } from './registration.ts'
-import { createSessionRegistry, DRAIN_TIMEOUT_MS, type SessionAgent, type SessionState } from './session.ts'
+import { createSessionRegistry, DRAIN_TIMEOUT_MS, type SessionState } from './session.ts'
 import { registerTools, requireProject } from './tools.ts'
 
 export const name = 'dsh-gentle-engram'
 export const inject = ['tools']
-
-/** Prompt-context provider input; `agent` is absent on diagnostics. */
-interface AssembleContextLike {
-  readonly agent?: { readonly id: string }
-}
-
-interface SystemPromptService {
-  context(entry: {
-    readonly name: string
-    readonly order: number
-    readonly text: string | ((context: AssembleContextLike) => string)
-  }): () => void
-}
-
-/** Cancels one Cordis event registration; the boolean reports whether it was attached. */
-type EventDisposer = () => boolean
-
-/** The fiber `inject()` returns. Only its disposal is part of this surface. */
-interface InjectionFiber {
-  readonly dispose: () => Promise<void>
-}
-
-/** The Cordis surface this plugin uses. */
-interface PluginContext {
-  readonly logger: Logger
-  readonly tools: { register(definition: unknown): () => void }
-  on(event: string, listener: (...args: never[]) => unknown): EventDisposer
-  inject(deps: readonly string[], callback: (scope: PluginContext & { readonly systemPrompt: SystemPromptService }) => void): InjectionFiber
-}
 
 /**
  * How long a *failed* project resolution is trusted before it is retried.
@@ -94,7 +74,7 @@ function resultText(result: unknown): string {
   return blocksToText(record.content)
 }
 
-export function apply(ctx: PluginContext, rawConfig?: RawEngramConfig): void {
+export function apply(ctx: Context, rawConfig?: RawEngramConfig): void {
   const config = resolveConfig(rawConfig, message => ctx.logger.warn(`engram config: ${message}`))
   const client = createClient(config, ctx.logger)
   const server = createServerManager(config, client, ctx.logger)
@@ -154,7 +134,7 @@ export function apply(ctx: PluginContext, rawConfig?: RawEngramConfig): void {
   }
 
   /** Warm the session state for one agent. */
-  async function startSession(agent: SessionAgent): Promise<void> {
+  async function startSession(agent: Agent): Promise<void> {
     return startState(sessions.ensure(agent))
   }
 
@@ -228,15 +208,16 @@ export function apply(ctx: PluginContext, rawConfig?: RawEngramConfig): void {
   // event the harness awaits before creation resolves, so this deliberately does
   // not return the warm-up promise: a slow Engram server must not delay the
   // session, and the lazy path in every tool already covers a lost warm-up.
-  ctx.on('agent/created', ((payload: { agent: SessionAgent }) => {
+  ctx.on('agent/created', payload => {
     void startSession(payload.agent).catch((error: unknown) => {
       warnCapture(ctx.logger, 'session start', error)
     })
-  }) as never)
+    return undefined
+  })
 
   // Observe compaction. These listeners are NOT awaited by the session log,
   // so every failure has to be handled here.
-  ctx.on('session/event', ((session: { id?: string } & SessionAgent['session'], event: { type?: string; data?: unknown }) => {
+  ctx.on('session/event', (session, event) => {
     if (event.type !== 'compaction/summary') return
     const sessionId = session.id
     if (sessionId === undefined) return
@@ -258,7 +239,7 @@ export function apply(ctx: PluginContext, rawConfig?: RawEngramConfig): void {
     void handleCompaction(sessionId, event).catch((error: unknown) => {
       warnCapture(ctx.logger, 'compaction archive', error)
     })
-  }) as never)
+  })
 
   /**
    * Capture one user prompt, waiting for warm-up and registration first.
@@ -298,7 +279,7 @@ export function apply(ctx: PluginContext, rawConfig?: RawEngramConfig): void {
   // Prompt capture. The event also fires for plugin-injected messages, so the
   // source kind is the discriminator — and DSH's source union has no 'human'
   // member, so anything that is not exactly 'user' is skipped.
-  ctx.on('agent/inbox/inserted', ((payload: { agent?: SessionAgent; message?: { content?: unknown; source?: { kind?: string } } }) => {
+  ctx.on('agent/inbox/inserted', payload => {
     if (!config.capturePrompts) return
     const agent = payload.agent
     const message = payload.message
@@ -312,7 +293,7 @@ export function apply(ctx: PluginContext, rawConfig?: RawEngramConfig): void {
     // happened to call a mem_* tool. The event body carries the whole agent, so
     // the state is always reconstructible.
     void capturePrompt(sessions.ensure(agent), text).catch((error: unknown) => warnCapture(ctx.logger, 'prompt capture', error))
-  }) as never)
+  })
 
   /** Send one tool result to Engram's passive extractor, once it can be attributed. */
   async function captureResult(state: SessionState, text: string, toolName: string): Promise<void> {
@@ -340,7 +321,7 @@ export function apply(ctx: PluginContext, rawConfig?: RawEngramConfig): void {
 
   // Passive capture. Engram's server-side parser decides what becomes a
   // learning, so this only filters out our own tools, failures, and trivia.
-  ctx.on('tools/result', ((exec: { agent?: SessionAgent; name?: string }, result: unknown) => {
+  ctx.on('tools/result', (exec, result) => {
     if (!config.captureToolResults) return
     const agent = exec.agent
     const toolName = exec.name ?? ''
@@ -353,16 +334,17 @@ export function apply(ctx: PluginContext, rawConfig?: RawEngramConfig): void {
     const payload = passivePayload(text, PASSIVE_CAPTURE_LIMIT)
     if (payload === undefined) return
     void captureResult(sessions.ensure(agent), payload, toolName).catch((error: unknown) => warnCapture(ctx.logger, 'passive capture', error))
-  }) as never)
+    return undefined
+  })
 
   // Serial dispatch: awaiting here delays turn end until the session's writes
   // settle. Returning a non-null value would bail the chain and silently skip
   // every later turn-stopping listener, so this deliberately resolves void.
-  ctx.on('agent/turn-stopping', (async (payload: { agent?: { id: string } }) => {
+  ctx.on('agent/turn-stopping', async payload => {
     const state = sessions.get(payload.agent?.id)
     if (state === undefined) return
     await sessions.drain(state, DRAIN_TIMEOUT_MS)
-  }) as never)
+  })
 
   // Disposal releases local state and nothing else. The Engram row is left
   // open on purpose: Engram treats `ended_at` as terminal and can never reopen
@@ -371,7 +353,7 @@ export function apply(ctx: PluginContext, rawConfig?: RawEngramConfig): void {
   // (Engram drops a lapsed row from omitted-session resolution on its own), and
   // terminal state belongs to `mem_session_end`, where a human or the model
   // actually declares the work over.
-  ctx.on('agent/disposed', ((payload: { agent?: { id: string } }) => {
+  ctx.on('agent/disposed', payload => {
     const id = payload.agent?.id
     if (id === undefined) return
     const state = sessions.get(id)
@@ -384,7 +366,7 @@ export function apply(ctx: PluginContext, rawConfig?: RawEngramConfig): void {
     // incarnation that just went away.
     if (state !== undefined) void sessions.drain(state, DRAIN_TIMEOUT_MS)
     sessions.forget(id)
-  }) as never)
+  })
 
   ctx.inject(['systemPrompt'], scope => {
     scope.systemPrompt.context({
@@ -396,7 +378,7 @@ export function apply(ctx: PluginContext, rawConfig?: RawEngramConfig): void {
       // only automatic memory-related text — it is consumed here. Synchronous by
       // contract, and DSH re-projects this contribution after a surface
       // replacement, so the protocol survives compaction without re-injection.
-      text: (context: AssembleContextLike) => {
+      text: context => {
         const parts = [PROTOCOL_TEXT]
         const state = context.agent === undefined ? undefined : sessions.get(context.agent.id)
         if (state?.pendingNotice !== undefined) {

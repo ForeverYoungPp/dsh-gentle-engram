@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { EngramClient, EngramFetchResult, FetchOptions } from './engram/client.ts'
 import { EngramHttpError } from './engram/errors.ts'
 import { createRegistration, REGISTRATION_TTL_MS } from './registration.ts'
-import { createSessionRegistry, type SessionAgent, type SessionRegistry, type SessionState } from './session.ts'
+import { createSessionRegistry, type SessionRegistry, type SessionState } from './session.ts'
 
 /**
  * Registration is the one place that decides whether an Engram session key
@@ -16,7 +17,10 @@ import { createSessionRegistry, type SessionAgent, type SessionRegistry, type Se
  * boundary stubbed.
  */
 
-const AGENT: SessionAgent = { id: 'session-a', session: { header: { cwd: '/repo' } } }
+// The registry reads only `id` and the live `session`; this fake supplies those
+// two fields. The cast is the honest record that this file exercises the
+// registry, not the harness's full `Agent`.
+const AGENT = { id: 'session-a', session: { header: { cwd: '/repo' } } }
 
 /** How the stubbed `GET /sessions/{id}` answers. */
 type RowState = 'open' | 'ended' | 'missing'
@@ -87,7 +91,7 @@ function harness(): Harness {
       },
     }),
     sessions,
-    state: sessions.ensure(AGENT),
+    state: sessions.ensure(AGENT as unknown as Agent),
     wire,
     row: 'open',
     fail: (error: unknown) => { permanent = error },
@@ -141,7 +145,7 @@ test('a disposed session resumed under the same agent id reuses its row', async 
   // Disposal: release the state and drop it. The Engram row is left open.
   h.state.released = true
   h.sessions.forget(AGENT.id)
-  const resumed = h.sessions.ensure(AGENT)
+  const resumed = h.sessions.ensure(AGENT as unknown as Agent)
   assert.notEqual(resumed, h.state)
   ageRegistration(resumed)
   assert.equal(await h.registration.ensureRegistered(resumed, 'demo'), true)

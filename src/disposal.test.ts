@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { createServer, type Server } from 'node:http'
 import { test } from 'node:test'
 
+import type { Context } from '@deepseek-ai/cordis'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 
 import { apply } from './index.ts'
@@ -82,7 +83,7 @@ function createContext(serverUrl: string): FakeContext {
   }
   // An explicit URL is used as given, with no identity check and no spawn — the
   // only way to drive the real client against a stub.
-  apply(ctx as unknown as Parameters<typeof apply>[0], { url: serverUrl })
+  apply(ctx as unknown as Context, { url: serverUrl })
   return { listeners, definitions }
 }
 

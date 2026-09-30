@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 
 import { resolveConfig } from './config.ts'
@@ -66,7 +67,10 @@ function harness(headerCwd: string | null = '/repo', onRequest?: (path: string) 
     return () => {}
   }, deps)
   const agent = { id: 'session-a', session: { header: headerCwd === null ? {} : { cwd: headerCwd } } }
-  return { definitions, requests, methods, client, state: sessions.ensure(agent) }
+  // The registry reads only `id` and the live `session`; the fake supplies those
+  // two fields, so the cast records that this file exercises the registry rather
+  // than the harness's full `Agent`.
+  return { definitions, requests, methods, client, state: sessions.ensure(agent as unknown as Agent) }
 }
 
 /** Invoke one registered definition the way the registry would. */

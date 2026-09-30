@@ -14,14 +14,9 @@
  */
 
 import { setTimeout as sleep } from 'node:timers/promises'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Logger } from './engram/client.ts'
 import type { ProjectResolution } from './engram/project.ts'
-
-/** The agent fields this plugin reads. Structurally satisfied by DSH's Agent. */
-export interface SessionAgent {
-  readonly id: string
-  readonly session: { readonly header: { readonly cwd?: string } }
-}
 
 /** Mutable runtime state for one agent session. */
 export interface SessionState {
@@ -89,8 +84,16 @@ export interface SessionState {
 /** Session state access and write serialization. */
 export interface SessionRegistry {
   get(id: string | undefined): SessionState | undefined
-  /** Create-on-demand state for one agent. */
-  ensure(agent: SessionAgent): SessionState
+  /**
+   * Create-on-demand state for one agent.
+   *
+   * Deliberately the harness's own `Agent` narrowed to the fields the registry
+   * reads (`id` and the live `session`), not a re-declared interface: a real
+   * `Agent` satisfies it, the `session/event` recovery path rebuilds it from the
+   * `Session` the harness hands over, and drift in `Agent.session` or its
+   * `header.cwd` still fails the build.
+   */
+  ensure(agent: Pick<Agent, 'id' | 'session'>): SessionState
   forget(id: string): void
   /** Run one operation after every previously queued operation for the session. */
   enqueue<T>(state: SessionState, operation: () => Promise<T>): Promise<T>
@@ -113,7 +116,7 @@ export function createSessionRegistry(logger: Logger): SessionRegistry {
     get(id: string | undefined): SessionState | undefined {
       return id === undefined ? undefined : states.get(id)
     },
-    ensure(agent: SessionAgent): SessionState {
+    ensure(agent: Pick<Agent, 'id' | 'session'>): SessionState {
       const existing = states.get(agent.id)
       if (existing !== undefined) return existing
       const cwd = agent.session.header.cwd
