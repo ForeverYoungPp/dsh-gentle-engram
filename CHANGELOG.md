@@ -1,10 +1,20 @@
 # Changelog
 
+## [0.7.2](https://github.com/ForeverYoungPp/dsh-gentle-engram/compare/v0.6.1...v0.7.2) (2026-10-01)
+
+The first release to reach the registry since 0.6.1. Identical source to 0.7.1,
+which was staged on npm but never approved; the version was re-cut so the release
+that ships carries its own number. See 0.7.1 and 0.7.0 below for everything it
+contains.
+
 ## [0.7.1](https://github.com/ForeverYoungPp/dsh-gentle-engram/compare/v0.6.1...v0.7.1) (2026-10-01)
 
-The first release to reach the registry since 0.6.1. It carries the DeepSeek
-Harness 0.2.0 compatibility work described under 0.7.0 below as well as the
-config standardization here.
+**Staged on npm, but never published**: 0.7.2 supersedes it and is the first
+release to reach the registry since 0.6.1. The version number stays spent so no
+later release reuses it.
+
+It carries the DeepSeek Harness 0.2.0 compatibility work described under 0.7.0
+below as well as the config standardization here.
 
 
 ### Features
@@ -23,7 +33,7 @@ config standardization here.
 
 ## [0.7.0](https://github.com/ForeverYoungPp/dsh-gentle-engram/compare/v0.6.1...v0.7.0) (2026-09-30)
 
-**Prepared and staged on npm, but never published**: 0.7.1 is the first release to
+**Prepared and staged on npm, but never published**: 0.7.2 is the first release to
 reach the registry since 0.6.1, and it carries this fix. The version number stays
 spent so no later release reuses it.
 
