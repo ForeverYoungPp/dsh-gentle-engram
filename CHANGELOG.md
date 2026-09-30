@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.7.0](https://github.com/ForeverYoungPp/dsh-gentle-engram/compare/v0.6.1...v0.7.0) (2026-09-30)
+
+DeepSeek Harness 0.2.0 support. The harness renamed its agent-lifecycle event, so
+the plugin now requires 0.2.0-rc.2 or later and no longer supports the 0.1.x line.
+
+
+### Bug Fixes
+
+* **lifecycle:** warm a session on `agent/created`, the event DSH 0.2.0 renamed `agent/session-start` to. Without it, session warm-up silently stopped running and every capture waited for the first `mem_*` call to rebuild state lazily.
+
+
+### BREAKING CHANGES
+
+* **lifecycle:** DeepSeek Harness 0.1.x is no longer supported. The `agent/session-start` event this plugin subscribed to does not exist after 0.2.0.
+
 ## [0.6.1](https://github.com/ForeverYoungPp/dsh-gentle-engram/compare/v0.6.0...v0.6.1) (2026-09-24)
 
 

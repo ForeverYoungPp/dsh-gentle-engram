@@ -39,7 +39,9 @@ memory-related text.
 
 ## Requirements
 
-- DeepSeek Harness 0.1.5-rc.2 or later.
+- DeepSeek Harness 0.2.0-rc.2 or later. Earlier harness lines (0.1.x) are not
+  supported: 0.2.0 replaced the `agent/session-start` event this plugin warms
+  sessions on with `agent/created`.
 - An Engram binary on `PATH` (or `ENGRAM_BIN`) that provides the `serve` and
   `instance-id` subcommands. Verify with `engram serve`, `engram instance-id` and
   `engram --version`.
@@ -228,8 +230,8 @@ restart. Three things about it are non-obvious and cost real debugging time:
    first, so the watcher sees `unlink`+`add` and never reloads. That is why
    `tsdown.config.ts` sets `clean: false`.
 3. **A reload gives the plugin a fresh, empty session registry** while agents
-   keep running, and no `agent/session-start` fires again. Every tool therefore
-   re-initialises its session lazily rather than assuming `agent/session-start`
+   keep running, and no `agent/created` fires again. Every tool therefore
+   re-initialises its session lazily rather than assuming `agent/created`
    already ran — and the prompt/passive capture listeners rebuild the state from
    the agent carried on their own event instead of skipping when it is missing.
    Bailing out there silently disabled all memory capture until the model

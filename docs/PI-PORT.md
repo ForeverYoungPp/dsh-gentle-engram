@@ -127,7 +127,7 @@ pi 不等外部服务，自己拉起 `engram serve`（`index.ts:543-761`；`spaw
 
 | pi 机制 | DSH 对应 | 差异/注意 |
 | --- | --- | --- |
-| `pi.on('session_start')` | `ctx.on('agent/session-start')` | **DSH 是 emit，不阻塞启动** → 注册与第一个 step 有竞态，读侧要容忍"未就绪" |
+| `pi.on('session_start')` | `ctx.on('agent/created')`（0.2.0 起；0.1.x 为 `agent/session-start`） | 0.2.0 起是 **serial 且被 await**，监听器抛错会让创建失败 → 暖机必须 `void` 出去并自己兜错；读侧仍要容忍"未就绪"（热重载会清空注册表） |
 | `pi.on('session_compact')` | `ctx.on('session/event')` 过滤 `compaction/summary` | **DSH 监听器不被 await**（`session/src/index.ts:410-419`），归档必须自己兜错；`data.summary` 是 `ContentBlock[]` 而非 string |
 | `pi.on('before_agent_start')` 返回增强 systemPrompt | `systemPrompt.context({name, order, text: (ctx) => string})` | 见下方 (a) |
 | `pi.on('tool_execution_end')` | `ctx.on('tools/result')` | 同为观察型（emit、失败被吞），选它做 passive 捕获正确 |

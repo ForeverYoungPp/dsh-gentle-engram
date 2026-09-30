@@ -104,10 +104,24 @@ function postedIds(calls: Calls): string[] {
   return calls.filter(call => call === 'POST /sessions').map(() => 'session-a')
 }
 
+test('the plugin subscribes to the lifecycle event the harness actually emits', async () => {
+  const { stub, url } = await stubServer()
+  const ctx = createContext(url)
+  try {
+    // DSH 0.2.0 renamed `agent/session-start` to `agent/created`. The plugin
+    // declares its own Cordis surface, so `tsc` cannot see the rename: this
+    // subscription is the only thing that keeps session warm-up wired.
+    assert.ok(ctx.listeners.has('agent/created'), 'the plugin never subscribed to agent/created')
+    assert.ok(!ctx.listeners.has('agent/session-start'), 'the plugin still listens for the event DSH 0.2.0 removed')
+  } finally {
+    await stub.close()
+  }
+})
+
 test('disposal writes nothing: no session is ever ended', async () => {
   const { stub, url } = await stubServer()
   const ctx = createContext(url)
-  ctx.listeners.get('agent/session-start')?.({ agent: AGENT } as never)
+  ctx.listeners.get('agent/created')?.({ agent: AGENT } as never)
   await save(ctx.definitions)
 
   const started = [...ctx.listeners.keys()].includes('agent/disposed')
@@ -129,13 +143,13 @@ test('disposal writes nothing: no session is ever ended', async () => {
 test('a resumed session keeps the key it started with', async () => {
   const { stub, url } = await stubServer()
   const ctx = createContext(url)
-  ctx.listeners.get('agent/session-start')?.({ agent: AGENT } as never)
+  ctx.listeners.get('agent/created')?.({ agent: AGENT } as never)
   await save(ctx.definitions)
   const before = stub.calls.filter(call => call === 'POST /sessions').length
 
   // Disposal, then a resume of the same agent/session id.
   ctx.listeners.get('agent/disposed')?.({ agent: AGENT } as never)
-  ctx.listeners.get('agent/session-start')?.({ agent: AGENT, source: 'resume' } as never)
+  ctx.listeners.get('agent/created')?.({ agent: AGENT, source: 'resume' } as never)
   await save(ctx.definitions)
   await new Promise(resolve => setTimeout(resolve, 20))
 

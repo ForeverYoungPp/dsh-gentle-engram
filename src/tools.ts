@@ -38,7 +38,7 @@ export interface ToolDeps {
   readonly summarize: (state: SessionState, content: string) => Promise<JsonValue>
   /**
    * Ensure one agent's session state exists. Invoked lazily by every tool, so a
-   * call that races the `agent/session-start` notification — or that arrives
+   * call that races the `agent/created` notification — or that arrives
    * after a hot reload replaced this plugin instance and its empty registry —
    * still works instead of failing.
    */
@@ -121,7 +121,7 @@ function endedAtOf(row: JsonValue): JsonValue {
  * should not show up in Engram at all. Write paths use {@link sessionForWrite}.
  *
  * Lazily re-initialising matters in two cases: a tool call can win the race
- * against the non-awaited `agent/session-start` notification, and a hot reload
+ * against the non-awaited `agent/created` notification, and a hot reload
  * gives the plugin a fresh empty registry while the agent is still running.
  */
 async function sessionFor(exec: ToolRunContext, deps: ToolDeps): Promise<SessionState> {

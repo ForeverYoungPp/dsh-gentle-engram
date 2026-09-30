@@ -224,7 +224,11 @@ export function apply(ctx: PluginContext, rawConfig?: RawEngramConfig): void {
     state.pendingNotice = buildRecoveryNotice(project, undefined, outcome)
   }
 
-  ctx.on('agent/session-start', ((payload: { agent: SessionAgent }) => {
+  // `agent/created` replaced `agent/session-start` in DSH 0.2.0. It is a serial
+  // event the harness awaits before creation resolves, so this deliberately does
+  // not return the warm-up promise: a slow Engram server must not delay the
+  // session, and the lazy path in every tool already covers a lost warm-up.
+  ctx.on('agent/created', ((payload: { agent: SessionAgent }) => {
     void startSession(payload.agent).catch((error: unknown) => {
       warnCapture(ctx.logger, 'session start', error)
     })
@@ -238,7 +242,7 @@ export function apply(ctx: PluginContext, rawConfig?: RawEngramConfig): void {
     if (sessionId === undefined) return
     // sessions.ensure, not sessions.get, for the same reason the capture
     // listeners below use it: a hot reload leaves this instance with an empty
-    // registry and no session-start re-fires, so a get() here would drop the
+    // registry and no agent-created re-fires, so a get() here would drop the
     // compaction archive and its recovery guidance in silence. DSH hands the
     // whole session to this listener, so the state is reconstructible — but
     // only from a recorded cwd: falling back to the process directory would
@@ -303,7 +307,7 @@ export function apply(ctx: PluginContext, rawConfig?: RawEngramConfig): void {
     const text = messageText(message.content)
     if (text.length <= 10) return
     // sessions.ensure, not sessions.get: a hot reload leaves this plugin instance
-    // with an empty registry while the agent keeps running and no session-start
+    // with an empty registry while the agent keeps running and no agent/created
     // fires again, so a get() here silently disabled capture until the model
     // happened to call a mem_* tool. The event body carries the whole agent, so
     // the state is always reconstructible.
