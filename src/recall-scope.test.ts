@@ -56,7 +56,7 @@ function harness(headerCwd: string | null = '/repo', onRequest?: (path: string) 
     client,
     sessions,
     logger: { info() {}, warn() {} },
-    config: resolveConfig(undefined, () => {}),
+    config: resolveConfig(undefined),
     summarize: async () => null,
     startSession: async () => {},
     ensureRegistered: async () => true,

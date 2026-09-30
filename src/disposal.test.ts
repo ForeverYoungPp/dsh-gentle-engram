@@ -5,7 +5,7 @@ import { test } from 'node:test'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 
-import { apply } from './index.ts'
+import { apply, Config } from './index.ts'
 
 /**
  * The lifecycle guard for the session row.
@@ -83,7 +83,7 @@ function createContext(serverUrl: string): FakeContext {
   }
   // An explicit URL is used as given, with no identity check and no spawn — the
   // only way to drive the real client against a stub.
-  apply(ctx as unknown as Context, { url: serverUrl })
+  apply(ctx as unknown as Context, Config({ url: serverUrl }))
   return { listeners, definitions }
 }
 

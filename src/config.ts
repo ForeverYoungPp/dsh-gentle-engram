@@ -1,11 +1,19 @@
 /**
- * Plugin configuration: defaults, environment overrides, and validation.
+ * Plugin configuration: the Cordis `Config` schema, defaults, and environment
+ * overrides.
+ *
+ * `Config` is the single source of truth for the eight fields: cordis validates
+ * it and applies defaults before `apply` runs, and `resolveConfig` reuses the
+ * same constraints for the environment layer. Invalid input fails the plugin
+ * load instead of being silently replaced by a default.
  *
  * Environment variables follow the upstream Pi adapter so existing Engram
  * users need to learn nothing new: `ENGRAM_URL`, `ENGRAM_BIN`, `ENGRAM_PORT`.
  *
  * @module dsh-gentle-engram/config
  */
+
+import Schema from '@deepseek-ai/schemastery'
 
 /** Fully resolved plugin configuration. */
 export interface EngramConfig {
@@ -27,31 +35,54 @@ export interface EngramConfig {
   readonly fetchMaxAttempts: number
 }
 
-/** Raw config as it appears in `cordis.patch.yml`. */
-export interface RawEngramConfig {
-  readonly binary?: unknown
-  readonly url?: unknown
-  readonly port?: unknown
-  readonly captureToolResults?: unknown
-  readonly capturePrompts?: unknown
-  readonly requestTimeoutMs?: unknown
-  readonly startupTimeoutMs?: unknown
-  readonly fetchMaxAttempts?: unknown
+/**
+ * The eight config fields, declared once.
+ *
+ * One object drives three consumers that would otherwise drift apart: the
+ * schema body, the known-key set, and the re-validation of environment values.
+ * `natural()` is `number().step(1).min(0)`, so every explicit `.min(lo)`
+ * overrides its implicit zero and non-integers are rejected by the step check —
+ * no value is ever truncated.
+ */
+const FIELDS = {
+  binary: Schema.string().pattern(/\S/).default('engram'),
+  // Schema fields cannot default to `undefined`, so `url` uses the empty string
+  // as a sentinel and `resolveConfig` folds it back to `string | undefined`.
+  url: Schema.string().default(''),
+  port: Schema.natural().min(1).max(65_535).default(7437),
+  captureToolResults: Schema.boolean().default(true),
+  capturePrompts: Schema.boolean().default(true),
+  requestTimeoutMs: Schema.natural().min(100).max(120_000).default(3000),
+  startupTimeoutMs: Schema.natural().min(500).max(300_000).default(10_000),
+  fetchMaxAttempts: Schema.natural().min(1).max(8).default(3),
 }
 
-/** Defaults for every non-environment field. */
-export const DEFAULT_CONFIG: EngramConfig = {
-  binary: 'engram',
-  url: undefined,
-  port: 7437,
-  captureToolResults: true,
-  capturePrompts: true,
-  requestTimeoutMs: 3000,
-  startupTimeoutMs: 10_000,
-  fetchMaxAttempts: 3,
-}
+/** The plugin config, as cordis consumes it. */
+export const Config = Schema.object(FIELDS)
 
-const KNOWN_KEYS = new Set(Object.keys(DEFAULT_CONFIG))
+/** Schema input: every field optional, unknown keys tolerated by the schema itself. */
+export type ConfigInput = Schemastery.TypeS<typeof Config>
+
+/** Schema output: the validated, default-filled object cordis hands to `apply`. */
+export type ConfigOutput = Schemastery.TypeT<typeof Config>
+
+const KNOWN_KEYS = new Set(Object.keys(FIELDS))
+
+/**
+ * Reject a config key the schema does not declare.
+ *
+ * The schema cannot do this itself: schemastery's object resolver merges the
+ * input into the result, so an unknown key survives validation untouched. A
+ * typo in `cordis.patch.yml` has to fail the load, not become a silent no-op.
+ */
+function assertKnownKeys(raw: ConfigInput | undefined): void {
+  if (raw === undefined) return
+  for (const key of Object.keys(raw)) {
+    if (!KNOWN_KEYS.has(key)) {
+      throw new TypeError(`unknown config key "${key}" (expected one of ${[...KNOWN_KEYS].join(', ')})`)
+    }
+  }
+}
 
 /** Env override helper: first non-blank value wins. */
 function envString(name: string): string | undefined {
@@ -59,11 +90,22 @@ function envString(name: string): string | undefined {
   return value !== undefined && value.length > 0 ? value : undefined
 }
 
+/**
+ * Read `ENGRAM_PORT`, validated by the same schema as the yml value.
+ *
+ * A malformed value is fatal: falling back to the yml or the default would
+ * present a bad override as a working one.
+ */
 function envPort(): number | undefined {
   const raw = envString('ENGRAM_PORT')
   if (raw === undefined) return undefined
-  const parsed = Number.parseInt(raw, 10)
-  return Number.isSafeInteger(parsed) && parsed > 0 && parsed <= 65_535 ? parsed : undefined
+  const value = Number(raw)
+  if (!Number.isFinite(value)) throw new TypeError(`invalid ENGRAM_PORT "${raw}": expected a number`)
+  try {
+    return FIELDS.port(value)
+  } catch (error) {
+    throw new TypeError(`invalid ENGRAM_PORT "${raw}": ${error instanceof Error ? error.message : String(error)}`)
+  }
 }
 
 /**
@@ -80,45 +122,30 @@ export function engramAuthToken(): string | undefined {
   return value !== undefined && value.length > 0 ? value : undefined
 }
 
-/** Keep an override only when it is the right primitive and finite. */
-function pickNumber(raw: unknown, fallback: number, min: number, max: number): number {
-  if (typeof raw !== 'number' || !Number.isFinite(raw)) return fallback
-  const value = Math.trunc(raw)
-  return value >= min && value <= max ? value : fallback
-}
-
-function pickBoolean(raw: unknown, fallback: boolean): boolean {
-  return typeof raw === 'boolean' ? raw : fallback
-}
-
-function pickString(raw: unknown, fallback: string): string {
-  return typeof raw === 'string' && raw.trim().length > 0 ? raw.trim() : fallback
-}
-
 /**
  * Resolve raw plugin config plus environment into a complete configuration.
- * Unknown keys are reported so a typo in `cordis.patch.yml` is visible rather
- * than silently ignored.
  *
- * @param raw - the config object handed to the plugin.
- * @param warn - diagnostic sink for unknown keys.
+ * Order: strict key check → schema validation/defaults → validated environment
+ * precedence → `url` sentinel fold. Validation precedes environment layering so
+ * a valid override can never excuse an invalid yml value.
+ *
+ * @param raw - the config object handed to the plugin by cordis.
  */
-export function resolveConfig(raw: RawEngramConfig | undefined, warn: (message: string) => void): EngramConfig {
-  const source = raw ?? {}
-  for (const key of Object.keys(source)) {
-    if (!KNOWN_KEYS.has(key)) warn(`unknown config key "${key}" was ignored`)
-  }
-  const url = envString('ENGRAM_URL') ?? (typeof source.url === 'string' && source.url.trim().length > 0
-    ? source.url.trim()
-    : undefined)
+export function resolveConfig(raw?: ConfigInput): EngramConfig {
+  assertKnownKeys(raw)
+  const validated = Config(raw ?? {})
+  const ymlUrl = validated.url.trim()
+  // "External server configured" keys off `undefined`, so a blank URL has to
+  // fold here and nowhere else; no resolved config may expose `''`.
+  const url = envString('ENGRAM_URL') ?? (ymlUrl === '' ? undefined : ymlUrl)
   return {
-    binary: envString('ENGRAM_BIN') ?? pickString(source.binary, DEFAULT_CONFIG.binary),
+    binary: envString('ENGRAM_BIN') ?? validated.binary.trim(),
     url,
-    port: envPort() ?? pickNumber(source.port, DEFAULT_CONFIG.port, 1, 65_535),
-    captureToolResults: pickBoolean(source.captureToolResults, DEFAULT_CONFIG.captureToolResults),
-    capturePrompts: pickBoolean(source.capturePrompts, DEFAULT_CONFIG.capturePrompts),
-    requestTimeoutMs: pickNumber(source.requestTimeoutMs, DEFAULT_CONFIG.requestTimeoutMs, 100, 120_000),
-    startupTimeoutMs: pickNumber(source.startupTimeoutMs, DEFAULT_CONFIG.startupTimeoutMs, 500, 300_000),
-    fetchMaxAttempts: pickNumber(source.fetchMaxAttempts, DEFAULT_CONFIG.fetchMaxAttempts, 1, 8),
+    port: envPort() ?? validated.port,
+    captureToolResults: validated.captureToolResults,
+    capturePrompts: validated.capturePrompts,
+    requestTimeoutMs: validated.requestTimeoutMs,
+    startupTimeoutMs: validated.startupTimeoutMs,
+    fetchMaxAttempts: validated.fetchMaxAttempts,
   }
 }

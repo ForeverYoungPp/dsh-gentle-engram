@@ -4,7 +4,7 @@ import { test } from 'node:test'
 
 import type { Context } from '@deepseek-ai/cordis'
 
-import { apply } from './index.ts'
+import { apply, Config } from './index.ts'
 import { PROTOCOL_TEXT } from './protocol.ts'
 
 /**
@@ -57,7 +57,7 @@ function createHarness(): { readonly contributor: () => Contributor | undefined 
       return { dispose: async () => {} }
     },
   }
-  apply(ctx as unknown as Context, { url: 'http://127.0.0.1:1' })
+  apply(ctx as unknown as Context, Config({ url: 'http://127.0.0.1:1' }))
   return { contributor: () => contributor }
 }
 

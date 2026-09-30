@@ -20,7 +20,7 @@ import type {} from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-compaction'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import { resolveConfig, type RawEngramConfig } from './config.ts'
+import { resolveConfig, type ConfigOutput } from './config.ts'
 import {
   ArchiveOutcome,
   archiveCompaction,
@@ -43,6 +43,11 @@ import { registerTools, requireProject } from './tools.ts'
 
 export const name = 'dsh-gentle-engram'
 export const inject = ['tools']
+
+// The plugin's config schema, re-exported so the module namespace cordis reads
+// as the plugin object carries it. Re-export rather than re-declare: the two
+// names must stay the same value.
+export { Config } from './config.ts'
 
 /**
  * How long a *failed* project resolution is trusted before it is retried.
@@ -74,8 +79,8 @@ function resultText(result: unknown): string {
   return blocksToText(record.content)
 }
 
-export function apply(ctx: Context, rawConfig?: RawEngramConfig): void {
-  const config = resolveConfig(rawConfig, message => ctx.logger.warn(`engram config: ${message}`))
+export function apply(ctx: Context, rawConfig?: ConfigOutput): void {
+  const config = resolveConfig(rawConfig)
   const client = createClient(config, ctx.logger)
   const server = createServerManager(config, client, ctx.logger)
   const sessions = createSessionRegistry(ctx.logger)

@@ -99,7 +99,7 @@ function configFor(binary: string, url: string | undefined = undefined, override
   // Spread the resolved config first, then the explicit values, so the ambient
   // environment cannot leak a URL or another binary into a case that must not
   // have one. Overrides last so a case can tighten its own budgets.
-  return { ...resolveConfig(undefined, () => {}), binary, url, ...overrides }
+  return { ...resolveConfig(undefined), binary, url, ...overrides }
 }
 
 function ensure(config: EngramConfig, logger: Logger): Promise<void> {

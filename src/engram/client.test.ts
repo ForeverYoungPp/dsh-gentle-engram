@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { test } from 'node:test'
 
-import { resolveConfig, type RawEngramConfig } from '../config.ts'
+import { resolveConfig, type ConfigInput } from '../config.ts'
 import { createClient, type EngramClient } from './client.ts'
 
 /**
@@ -63,8 +63,8 @@ function refusedError(): Error {
   return Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:7437'), { code: 'ECONNREFUSED' })
 }
 
-function client(raw?: RawEngramConfig): EngramClient {
-  return createClient(resolveConfig(raw, () => {}), logger)
+function client(raw?: ConfigInput): EngramClient {
+  return createClient(resolveConfig(raw), logger)
 }
 
 test('a timed-out write says it may already have landed and must be verified before retrying', async () => {
@@ -377,7 +377,7 @@ test('a retry backoff survives an otherwise empty event loop', () => {
     const { resolveConfig } = await import(${JSON.stringify(new URL('../config.ts', import.meta.url).href)})
     const { createClient } = await import(${JSON.stringify(new URL('./client.ts', import.meta.url).href)})
     const { isConnectionRefusedError } = await import(${JSON.stringify(new URL('./errors.ts', import.meta.url).href)})
-    const client = createClient({ ...resolveConfig(undefined, () => {}), fetchMaxAttempts: 2 }, { info() {}, warn() {} })
+    const client = createClient({ ...resolveConfig(undefined), fetchMaxAttempts: 2 }, { info() {}, warn() {} })
     try {
       await client.request('/observations')
       console.log('resolved')
