@@ -163,7 +163,15 @@ export function createServerManager(config: EngramConfig, client: EngramClient, 
         settle(new Error(`Engram server exited before readiness (code ${code ?? 'unknown'}, signal ${signal ?? 'none'})`))
 
       try {
-        child = spawn(config.binary, ['serve'], { windowsHide: true, detached: true, stdio: 'ignore' })
+        child = spawn(config.binary, ['serve'], {
+          windowsHide: true,
+          detached: true,
+          stdio: 'ignore',
+          // `serve` takes no port argument, so the configured port can only
+          // reach the child through the variable the CLI reads. Without it a
+          // port set in the yml would desync from the client and time out.
+          env: { ...process.env, ENGRAM_PORT: String(config.port) },
+        })
       } catch (error: unknown) {
         settle(error instanceof Error ? error : new Error('Engram server could not start'))
         return

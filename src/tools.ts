@@ -144,6 +144,11 @@ async function sessionFor(exec: ToolRunContext, deps: ToolDeps): Promise<Session
  */
 async function sessionForWrite(exec: ToolRunContext, deps: ToolDeps): Promise<SessionState> {
   const state = await sessionFor(exec, deps)
+  // The project gate runs first on purpose. Registration also fails when no
+  // project is resolved, so letting it report first would answer an ambiguous
+  // workspace with "Run mem_doctor", pointing the user at a healthy server
+  // while the real cause (and its candidate list) stays hidden.
+  requireProject(state)
   if (!(await deps.ensureRegistered(state))) {
     throw new Error('Engram memory is not available for this session yet: the session row could not be registered. Run mem_doctor to check the Engram server.')
   }

@@ -233,6 +233,29 @@ test('a refused health probe makes ensure() spawn the binary and poll until read
   assert.deepEqual(invocations(record), ['instance-id', 'serve'])
 })
 
+test('the configured port reaches the spawned server as ENGRAM_PORT', async (t) => {
+  const dir = tempDir(t)
+  const envRecord = join(dir, 'serve-env.log')
+  // `engram serve` takes no port argument, so the only way a configured port
+  // reaches the child is the environment variable the CLI reads.
+  const binary = stubBinary(dir, `
+    if (process.argv[2] === 'instance-id') { console.log('${LOCAL_INSTANCE_ID}'); process.exit(0) }
+    require('node:fs').appendFileSync(${JSON.stringify(envRecord)}, String(process.env.ENGRAM_PORT) + '\\n')
+    setTimeout(() => process.exit(0), 1000)
+  `)
+  let probes = 0
+  stubFetch(t, () => {
+    probes += 1
+    if (probes === 1) throw refusedError()
+    return new Response(JSON.stringify({ instance_id: LOCAL_INSTANCE_ID }), { status: 200 })
+  })
+
+  await ensure(configFor(binary, undefined, { port: 7654 }), recordingLogger())
+  await waitUntil(() => existsSync(envRecord))
+
+  assert.equal(readFileSync(envRecord, 'utf8').trim(), '7654')
+})
+
 test('ensure() rejects with the startup-timeout error when the server never becomes ready', async (t) => {
   const dir = tempDir(t)
   const binary = recordingBinary(dir, join(dir, 'invocations.log'), 2000)

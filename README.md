@@ -99,7 +99,7 @@ is Engram's own):
 
 ## Tools
 
-Twenty-two native tools, matching Engram's `agent` MCP profile:
+Twenty-two native tools, matching Engram's `agent` MCP profile except where noted:
 
 `mem_save`, `mem_search`, `mem_context`, `mem_stats`, `mem_timeline`,
 `mem_session_summary`, `mem_session_start`, `mem_session_end`, `mem_get_observation`,
@@ -112,11 +112,16 @@ this session's resolved project. Cross-project reads (`all_projects: true`, also
 `mem_stats` and `mem_review list`) are explicit-only: the plugin never falls back to them
 automatically.
 
-One deliberate difference from the MCP originals:
+Two deliberate differences from the MCP originals:
 
 - **`mem_session_start` / `mem_session_end` take no model-supplied session id.** Session
   identity belongs to the plugin; letting the model mint keys would desynchronise every
   later capture.
+- **The set is the pre-3.x profile.** It exposes `mem_delete`, `mem_stats` and `mem_timeline`,
+  which Engram 3.x moved to its `admin` profile, and it does not expose
+  `mem_search_prompts`, `mem_consolidate`, `mem_session_finalize` or `mem_judge_many`, which
+  Engram 3.x added to `agent`. Every exposed tool still backs onto a route the current
+  server serves.
 
 `mem_list_projects` is read-only discovery: it reports every project, but no tool accepts a
 project argument, so it cannot be used to widen another tool's scope.
