@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.8.1](https://github.com/ForeverYoungPp/dsh-gentle-engram/compare/v0.8.0...v0.8.1) (2026-11-09)
+
+
+### Bug Fixes
+
+* correct the ambiguous-workspace diagnosis and the spawned server's port ([e8631e6](https://github.com/ForeverYoungPp/dsh-gentle-engram/commit/e8631e6789ae7ad7b93e4d1cd781134ca314a9d5))
+* **server:** pass the configured port to the spawned server ([0b4fc9a](https://github.com/ForeverYoungPp/dsh-gentle-engram/commit/0b4fc9a409be217ab8b5d80ae39285e76bf4cc26))
+* **tools:** report the project ambiguity before a registration failure ([2f7f2bb](https://github.com/ForeverYoungPp/dsh-gentle-engram/commit/2f7f2bb90cac2e7cf09dc3619dc11aaf1bc8c4bf))
+
 ## [0.8.0](https://github.com/ForeverYoungPp/dsh-gentle-engram/compare/v0.7.3...v0.8.0) (2026-11-09)
 
 
