@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.8.0](https://github.com/ForeverYoungPp/dsh-gentle-engram/compare/v0.7.3...v0.8.0) (2026-11-09)
+
+
+### Features
+
+* align the tool surface with Engram 3.7.0 ([3cc7e7f](https://github.com/ForeverYoungPp/dsh-gentle-engram/commit/3cc7e7f5f1e0aa690ea6fcb81f20607fe3aef5f3))
+* **tools:** expose mem_list_projects and forward mem_context compact/max_bytes ([407fde9](https://github.com/ForeverYoungPp/dsh-gentle-engram/commit/407fde9c12ba684616bb5b576fb0a26294d6ff3d))
+
+
+### Bug Fixes
+
+* **deps:** override zod to a patched 4.6 line for the dev tree ([fa1dbc1](https://github.com/ForeverYoungPp/dsh-gentle-engram/commit/fa1dbc169f715d9f6c75aa66d4482aaf86a69ab1))
+* **tools:** send expected_project to Engram 3.7.0 observation routes ([5af8e21](https://github.com/ForeverYoungPp/dsh-gentle-engram/commit/5af8e21b5ce9f61544c711a0fe9dd306b97d8fc2))
+
 ## [0.7.3](https://github.com/ForeverYoungPp/dsh-gentle-engram/compare/v0.6.1...v0.7.3) (2026-10-01)
 
 The first release to reach the registry since 0.6.1. Identical source to 0.7.1 and
