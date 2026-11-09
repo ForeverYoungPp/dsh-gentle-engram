@@ -442,6 +442,7 @@ export function registerTools(
     description: 'Correct an existing memory in place by id. Only the fields you provide change.',
     parameters: {
       id: requiredNumber('Observation id to update'),
+      expected_project: requiredString('Project that owns the observation, from mem_get_observation or mem_search results'),
       title: optionalString('New title'),
       content: optionalString('New content'),
       type: optionalString('New type/category'),
@@ -450,7 +451,7 @@ export function registerTools(
     },
     output: ENGRAM_OUTPUT,
     execute: async (args, exec) =>
-      deps.client.request(`/observations/${encodeURIComponent(String(args.id))}`, {
+      deps.client.request(`/observations/${encodeURIComponent(String(args.id))}${queryString({ expected_project: args.expected_project })}`, {
         method: 'PATCH',
         signal: exec.signal,
         body: { title: args.title, content: args.content, type: args.type, scope: args.scope, topic_key: args.topic_key },
@@ -462,11 +463,12 @@ export function registerTools(
     description: 'Delete a memory by id. Soft delete by default: the row is tombstoned and stops appearing in searches. Pass hard_delete to remove it permanently. Deleting an id that does not exist is reported as an error, not as a silent success.',
     parameters: {
       id: requiredNumber('Observation id to delete'),
+      expected_project: requiredString('Project that owns the observation, from mem_get_observation or mem_search results'),
       hard_delete: optionalBoolean('Remove the row permanently instead of tombstoning it'),
     },
     output: ENGRAM_OUTPUT,
     execute: async (args, exec) =>
-      deps.client.request(`/observations/${encodeURIComponent(String(args.id))}${queryString({ hard: args.hard_delete })}`, { method: 'DELETE', signal: exec.signal }),
+      deps.client.request(`/observations/${encodeURIComponent(String(args.id))}${queryString({ hard: args.hard_delete, expected_project: args.expected_project })}`, { method: 'DELETE', signal: exec.signal }),
   }))
 
   add(defineTool({

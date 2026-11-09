@@ -349,30 +349,51 @@ test('mem_current_project refuses a relative cwd and issues no request', async (
 
 test('mem_delete sends DELETE /observations/<id>?hard=true when hard_delete is true', async () => {
   const h = harness()
-  await call(h, 'mem_delete', { id: 42, hard_delete: true })
+  await call(h, 'mem_delete', { id: 42, expected_project: 'demo', hard_delete: true })
   assert.deepEqual(h.methods, ['DELETE'])
   assert.equal(h.requests.length, 1)
-  assert.equal(h.requests[0], '/observations/42?hard=true')
+  assert.equal(h.requests[0], '/observations/42?hard=true&expected_project=demo')
 })
 
-test('mem_delete sends DELETE /observations/<id> with no query string when hard_delete is omitted', async () => {
+test('mem_delete omits hard when hard_delete is omitted', async () => {
   const h = harness()
-  await call(h, 'mem_delete', { id: 42 })
+  await call(h, 'mem_delete', { id: 42, expected_project: 'demo' })
   assert.deepEqual(h.methods, ['DELETE'])
   assert.equal(h.requests.length, 1)
-  assert.equal(h.requests[0], '/observations/42')
+  assert.equal(h.requests[0], '/observations/42?expected_project=demo')
 })
 
 test('mem_delete surfaces a server error instead of reporting a deleted memory', async () => {
   const h = harness('/repo', async () => {
     throw new EngramHttpError('observation not found', 404, { error: 'observation not found' })
   })
-  await assert.rejects(() => call(h, 'mem_delete', { id: 999_999_999 }), (error: unknown) => {
+  await assert.rejects(() => call(h, 'mem_delete', { id: 999_999_999, expected_project: 'demo' }), (error: unknown) => {
     assert.ok(error instanceof EngramHttpError, 'a failed delete must not resolve')
     assert.equal(error.status, 404)
     assert.match(error.message, /observation not found/)
     return true
   })
+})
+
+test('mem_update forwards expected_project as the ownership guard the server requires', async () => {
+  const h = harness()
+  await call(h, 'mem_update', { id: 3, expected_project: 'demo', content: 'updated' })
+  assert.equal(h.requests.length, 1)
+  assert.equal(h.methods[0], 'PATCH')
+  assert.equal(queryOf(h.requests[0]!).get('expected_project'), 'demo')
+})
+
+test('mem_delete forwards expected_project and keeps hard absent unless asked', async () => {
+  const soft = harness()
+  await call(soft, 'mem_delete', { id: 3, expected_project: 'demo' })
+  assert.equal(soft.methods[0], 'DELETE')
+  assert.equal(queryOf(soft.requests[0]!).get('expected_project'), 'demo')
+  assert.equal(queryOf(soft.requests[0]!).get('hard'), null)
+
+  const hard = harness()
+  await call(hard, 'mem_delete', { id: 3, expected_project: 'demo', hard_delete: true })
+  assert.equal(queryOf(hard.requests[0]!).get('expected_project'), 'demo')
+  assert.equal(queryOf(hard.requests[0]!).get('hard'), 'true')
 })
 
 test('no registered tool declares a project parameter', () => {
