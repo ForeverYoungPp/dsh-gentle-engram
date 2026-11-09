@@ -2,13 +2,13 @@
  * The native Engram tool surface.
  *
  * These replace the `mcp__engram__mem_*` rows this plugin used to depend on.
- * The set is Engram's `agent` MCP profile minus `mem_list_projects`, which has
- * no HTTP route (its handler calls the store directly). `mem_delete` is now
- * exposed: the transport sends `Authorization: Bearer` whenever
- * `ENGRAM_HTTP_TOKEN` is set, which is what makes the delete route reachable in
- * a token-protected install.
+ * The set is Engram's `agent` MCP profile. `mem_list_projects` is backed by
+ * `GET /projects`, whose rows carry per-project observation, session and prompt
+ * counts. `mem_delete` is exposed because the transport sends
+ * `Authorization: Bearer` whenever `ENGRAM_HTTP_TOKEN` is set, which is what
+ * makes the delete route reachable in a token-protected install.
  *
- * Two signatures deviate from the MCP originals. `mem_session_start` and
+ * One signature deviates from the MCP originals. `mem_session_start` and
  * `mem_session_end` take no model-supplied id: session identity is owned by
  * this plugin (see `session.ts`), and letting the model mint session keys
  * would desynchronise registration from every later capture.
@@ -256,14 +256,16 @@ export function registerTools(
 
   add(defineTool({
     name: 'mem_context',
-    description: 'Read recent memory context from previous sessions in the active project. Call this at session start or after a compaction.',
+    description: 'Read recent memory context from previous sessions in the active project. Call this at session start or after a compaction. compact asks the server for the shorter form and max_bytes caps the length; both trim the same context rather than filtering it.',
     parameters: {
       scope: optionalString(SCOPE),
+      max_bytes: optionalNumber('Cap the returned context length in bytes'),
+      compact: optionalBoolean('Ask the server for its shorter context form'),
     },
     output: ENGRAM_OUTPUT,
     execute: async (args, exec) => {
       const state = await sessionFor(exec, deps)
-      return deps.client.request(`/context${queryString({ project: requireProject(state), scope: args.scope })}`, { signal: exec.signal })
+      return deps.client.request(`/context${queryString({ project: requireProject(state), scope: args.scope, max_bytes: args.max_bytes, compact: args.compact })}`, { signal: exec.signal })
     },
   }))
 
@@ -493,6 +495,14 @@ export function registerTools(
       }
       return deps.client.request(`/project/current${queryString({ cwd })}`, { signal: exec.signal })
     },
+  }))
+
+  add(defineTool({
+    name: 'mem_list_projects',
+    description: 'List every Engram project with its observation, session and prompt counts. Read-only discovery when the workspace resolves to an unfamiliar or empty project. This plugin\'s other tools always read the session\'s resolved project, so do not use this to switch scope.',
+    parameters: {},
+    output: ENGRAM_OUTPUT,
+    execute: async (_args, exec) => deps.client.request('/projects', { signal: exec.signal }),
   }))
 
   add(defineTool({

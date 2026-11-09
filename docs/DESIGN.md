@@ -114,9 +114,7 @@ Each of these has a matching comment in the code. They must keep holding.
 ## 4. Non-goals
 
 No hardcoded session summary. No regex secret scanning. No dual MCP + HTTP
-transport. No unix-socket transport yet. `mem_list_projects` stays unexposed
-because its handler calls the store directly and Engram serves no HTTP route for
-it. `mem_delete` was unexposed on the nominal grounds that its route sits behind
+transport. No unix-socket transport yet. `mem_delete` was unexposed on the nominal grounds that its route sits behind
 `requireAuth`, but that reason was misread: with `ENGRAM_HTTP_TOKEN` unset the
 check passes through and the route was open all along, so the only real blocker
 was the missing `Authorization` header — and with the variable set, the delete

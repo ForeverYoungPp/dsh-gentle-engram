@@ -147,6 +147,33 @@ test('mem_context fails closed when the project is unresolved and issues no requ
   assert.equal(h.requests.length, 0)
 })
 
+test('mem_context forwards compact and max_bytes only when asked', async () => {
+  const plain = harness()
+  resolveTo(plain.state, 'demo')
+  await call(plain, 'mem_context', {})
+  const bare = queryOf(plain.requests[0]!)
+  assert.equal(bare.get('project'), 'demo')
+  assert.equal(bare.get('compact'), null)
+  assert.equal(bare.get('max_bytes'), null)
+
+  const shaped = harness()
+  resolveTo(shaped.state, 'demo')
+  await call(shaped, 'mem_context', { compact: true, max_bytes: 40 })
+  const params = queryOf(shaped.requests[0]!)
+  assert.equal(params.get('project'), 'demo')
+  assert.equal(params.get('compact'), 'true')
+  assert.equal(params.get('max_bytes'), '40')
+})
+
+test('mem_list_projects lists every project without a project filter', async () => {
+  const h = harness()
+  resolveTo(h.state, 'demo')
+  await call(h, 'mem_list_projects', {})
+  assert.equal(h.requests.length, 1)
+  assert.equal(h.methods[0], 'GET')
+  assert.equal(h.requests[0], '/projects')
+})
+
 test("mem_stats sends the session's resolved project by default", async () => {
   const h = harness()
   resolveTo(h.state, 'demo')

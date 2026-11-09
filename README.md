@@ -99,26 +99,27 @@ is Engram's own):
 
 ## Tools
 
-Twenty-one native tools, matching Engram's `agent` MCP profile except where noted:
+Twenty-two native tools, matching Engram's `agent` MCP profile:
 
 `mem_save`, `mem_search`, `mem_context`, `mem_stats`, `mem_timeline`,
 `mem_session_summary`, `mem_session_start`, `mem_session_end`, `mem_get_observation`,
 `mem_suggest_topic_key`, `mem_capture_passive`, `mem_save_prompt`, `mem_update`, `mem_delete`,
-`mem_current_project`, `mem_judge`, `mem_compare`, `mem_doctor`, `mem_review`, `mem_pin`,
-`mem_unpin`.
+`mem_current_project`, `mem_list_projects`, `mem_judge`, `mem_compare`, `mem_doctor`,
+`mem_review`, `mem_pin`, `mem_unpin`.
 
 `mem_search`, `mem_context`, `mem_stats`, `mem_timeline` and `mem_review list` read from
 this session's resolved project. Cross-project reads (`all_projects: true`, also on
 `mem_stats` and `mem_review list`) are explicit-only: the plugin never falls back to them
 automatically.
 
-Two deliberate differences from the MCP originals:
+One deliberate difference from the MCP originals:
 
-- **`mem_list_projects` is absent.** Its handler calls the store directly and Engram exposes
-  no HTTP route for it. Use `mem_search` with `all_projects: true` instead.
 - **`mem_session_start` / `mem_session_end` take no model-supplied session id.** Session
   identity belongs to the plugin; letting the model mint keys would desynchronise every
   later capture.
+
+`mem_list_projects` is read-only discovery: it reports every project, but no tool accepts a
+project argument, so it cannot be used to widen another tool's scope.
 
 One transport difference from the upstream Pi adapter: this plugin sends
 `Authorization: Bearer $ENGRAM_HTTP_TOKEN` when that variable is set. Engram guards
