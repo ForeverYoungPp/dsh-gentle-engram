@@ -121,6 +121,11 @@ One deliberate difference from the MCP originals:
 `mem_list_projects` is read-only discovery: it reports every project, but no tool accepts a
 project argument, so it cannot be used to widen another tool's scope.
 
+`mem_update` and `mem_delete` require `expected_project`. Engram 3.7 and newer reject both
+routes without it (`400 expected_project must be a valid non-empty project name`), so the
+caller has to pass the owning project it read from `mem_get_observation` or `mem_search`;
+Engram then refuses the write if the observation belongs to a different project.
+
 One transport difference from the upstream Pi adapter: this plugin sends
 `Authorization: Bearer $ENGRAM_HTTP_TOKEN` when that variable is set. Engram guards
 `DELETE /observations/{id}`, `DELETE /prompts/{id}`, `DELETE /sessions/{id}`, `GET /export` and

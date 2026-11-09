@@ -114,9 +114,10 @@ Each of these has a matching comment in the code. They must keep holding.
 ## 4. Non-goals
 
 No hardcoded session summary. No regex secret scanning. No dual MCP + HTTP
-transport. No unix-socket transport yet. `mem_delete` was unexposed on the nominal grounds that its route sits behind
-`requireAuth`, but that reason was misread: with `ENGRAM_HTTP_TOKEN` unset the
-check passes through and the route was open all along, so the only real blocker
+transport. No unix-socket transport yet. `mem_delete` was unexposed on the
+nominal grounds that its route sits behind `requireAuth`, but that reason was
+misread: with `ENGRAM_HTTP_TOKEN` unset the check passes through and the route was
+open all along, so the only real blocker
 was the missing `Authorization` header — and with the variable set, the delete
 route is the one operation that needs it. The transport now sends
 `Authorization: Bearer` when that variable is set, and the tool is exposed on the
