@@ -73,5 +73,10 @@
     "@types/node": "^22.20.1",
     "tsdown": "^0.15.12",
     "typescript": "^5.9.3"
+  },
+  "pnpm": {
+    "overrides": {
+      "zod": "^4.6.6"
+    }
   }
 }
