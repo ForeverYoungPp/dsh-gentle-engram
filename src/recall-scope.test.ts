@@ -35,7 +35,7 @@ interface Harness {
  * whose header reports no working directory at all. `onRequest` replaces the
  * default successful stub, for tests that script the HTTP boundary.
  */
-function harness(headerCwd: string | null = '/repo', onRequest?: (path: string) => Promise<unknown>): Harness {
+function harness(headerCwd: string | null = '/repo', onRequest?: (path: string) => Promise<unknown>, registrationGate = false): Harness {
   const requests: string[] = []
   const methods: string[] = []
   const sessions = createSessionRegistry({ info() {}, warn() {} })
@@ -59,7 +59,9 @@ function harness(headerCwd: string | null = '/repo', onRequest?: (path: string) 
     config: resolveConfig(undefined),
     summarize: async () => null,
     startSession: async () => {},
-    ensureRegistered: async () => true,
+    // `registrationGate` mirrors the production wiring: the session row can only be
+    // registered once the workspace has a resolved project (index.ts -> registration.ts).
+    ensureRegistered: async (state: SessionState) => (registrationGate ? state.project?.kind === 'resolved' : true),
   }
   const definitions = new Map<string, ToolDefinition>()
   tools.registerTools(definition => {
@@ -163,6 +165,15 @@ test('mem_context forwards compact and max_bytes only when asked', async () => {
   assert.equal(params.get('project'), 'demo')
   assert.equal(params.get('compact'), 'true')
   assert.equal(params.get('max_bytes'), '40')
+})
+
+test('a write in an ambiguous workspace reports the ambiguity, not a registration failure', async () => {
+  const h = harness('/repo', undefined, true)
+  failResolution(h.state)
+  // The real cause is the unresolved project; the registration gate must not
+  // pre-empt it with "run mem_doctor", which sends the user to a healthy server.
+  await assert.rejects(() => call(h, 'mem_save', { title: 't', content: 'c' }), FAIL_CLOSED)
+  assert.equal(h.requests.length, 0)
 })
 
 test('mem_list_projects lists every project without a project filter', async () => {
